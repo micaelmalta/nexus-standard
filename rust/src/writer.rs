@@ -16,12 +16,12 @@
 ///   w.end_object();
 ///   let bytes = w.finish();
 
-const MAGIC_FILE: u32   = 0x4E585342; // NXSB
-const MAGIC_OBJ: u32    = 0x4E58534F; // NXSO
+const MAGIC_FILE: u32 = 0x4E585342; // NXSB
+const MAGIC_OBJ: u32 = 0x4E58534F; // NXSO
 #[allow(dead_code)]
-const MAGIC_LIST: u32   = 0x4E58534C; // NXSL
+const MAGIC_LIST: u32 = 0x4E58534C; // NXSL
 const MAGIC_FOOTER: u32 = 0x2153584E; // NXS!
-const VERSION: u16      = 0x0100;
+const VERSION: u16 = 0x0100;
 const FLAG_SCHEMA_EMBEDDED: u16 = 0x0002;
 
 /// A field slot — an index into the Schema's key list.
@@ -44,10 +44,16 @@ impl Schema {
         // LEB128 bitmask size for `keys.len()` bits
         let bitmask_bytes = (n + 6) / 7;
         let bitmask_bytes = bitmask_bytes.max(1);
-        Schema { keys, bitmask_bytes, sigils: vec![0u8; n] }
+        Schema {
+            keys,
+            bitmask_bytes,
+            sigils: vec![0u8; n],
+        }
     }
 
-    pub fn len(&self) -> usize { self.keys.len() }
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
 }
 
 /// Holds back-patch info for the currently-open object.
@@ -130,7 +136,8 @@ impl<'a> NxsWriter<'a> {
         self.buf.extend_from_slice(&MAGIC_OBJ.to_le_bytes());
         self.buf.extend_from_slice(&0u32.to_le_bytes()); // length placeholder
         // Reserve bitmask space (will back-patch)
-        self.buf.extend_from_slice(&self.frames.last().unwrap().bitmask.clone());
+        self.buf
+            .extend_from_slice(&self.frames.last().unwrap().bitmask.clone());
         // Reserve offset table space: u16 per possible slot (upper bound)
         let offset_table_reserve = self.schema.keys.len() * 2;
         self.buf.resize(self.buf.len() + offset_table_reserve, 0);
@@ -147,7 +154,7 @@ impl<'a> NxsWriter<'a> {
 
         // Back-patch Length field
         let len_offset = frame.start + 4;
-        self.buf[len_offset..len_offset+4].copy_from_slice(&(total_len as u32).to_le_bytes());
+        self.buf[len_offset..len_offset + 4].copy_from_slice(&(total_len as u32).to_le_bytes());
 
         // Back-patch Bitmask
         let bitmask_offset = frame.start + 8;
@@ -163,7 +170,7 @@ impl<'a> NxsWriter<'a> {
             // Fast path: fields were written in slot order → offset_table is already correct
             for (i, &off) in frame.offset_table.iter().enumerate() {
                 let p = offset_table_start + i * 2;
-                self.buf[p..p+2].copy_from_slice(&off.to_le_bytes());
+                self.buf[p..p + 2].copy_from_slice(&off.to_le_bytes());
             }
         } else {
             // Slow path: sort by slot, then write offsets in slot order
@@ -172,7 +179,7 @@ impl<'a> NxsWriter<'a> {
             for (i, (_, buf_off)) in pairs.iter().enumerate() {
                 let p = offset_table_start + i * 2;
                 let rel = (*buf_off as usize - frame.start) as u16;
-                self.buf[p..p+2].copy_from_slice(&rel.to_le_bytes());
+                self.buf[p..p + 2].copy_from_slice(&rel.to_le_bytes());
             }
         }
 
@@ -183,7 +190,9 @@ impl<'a> NxsWriter<'a> {
         if used_bytes < reserved_bytes {
             let zero_start = offset_table_start + used_bytes;
             let zero_end = offset_table_start + reserved_bytes;
-            for b in &mut self.buf[zero_start..zero_end] { *b = 0; }
+            for b in &mut self.buf[zero_start..zero_end] {
+                *b = 0;
+            }
         }
     }
 
@@ -241,7 +250,7 @@ impl<'a> NxsWriter<'a> {
 
         // Set bitmask bit — accounting for continuation bits
         let byte_idx = slot_idx / 7;
-        let bit_idx  = slot_idx % 7;
+        let bit_idx = slot_idx % 7;
         frame.bitmask[byte_idx] |= 1 << bit_idx;
 
         // Record relative offset from object start
@@ -300,21 +309,27 @@ impl<'a> NxsWriter<'a> {
         self.mark_slot_sigil(slot, b'"');
         self.mark_slot(slot);
         let bytes = v.as_bytes();
-        self.buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(bytes.len() as u32).to_le_bytes());
         self.buf.extend_from_slice(bytes);
         // pad to 8
         let pad = (8 - (4 + bytes.len()) % 8) % 8;
-        for _ in 0..pad { self.buf.push(0); }
+        for _ in 0..pad {
+            self.buf.push(0);
+        }
     }
 
     #[inline]
     pub fn write_bytes(&mut self, slot: Slot, data: &[u8]) {
         self.mark_slot_sigil(slot, b'<');
         self.mark_slot(slot);
-        self.buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(data.len() as u32).to_le_bytes());
         self.buf.extend_from_slice(data);
         let pad = (8 - (4 + data.len()) % 8) % 8;
-        for _ in 0..pad { self.buf.push(0); }
+        for _ in 0..pad {
+            self.buf.push(0);
+        }
     }
 
     pub fn write_list_i64(&mut self, slot: Slot, values: &[i64]) {
@@ -324,7 +339,8 @@ impl<'a> NxsWriter<'a> {
         self.buf.extend_from_slice(&MAGIC_LIST.to_le_bytes());
         self.buf.extend_from_slice(&(total as u32).to_le_bytes());
         self.buf.push(b'=');
-        self.buf.extend_from_slice(&(values.len() as u32).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(values.len() as u32).to_le_bytes());
         self.buf.extend_from_slice(&[0u8; 3]);
         for v in values {
             self.buf.extend_from_slice(&v.to_le_bytes());
@@ -338,7 +354,8 @@ impl<'a> NxsWriter<'a> {
         self.buf.extend_from_slice(&MAGIC_LIST.to_le_bytes());
         self.buf.extend_from_slice(&(total as u32).to_le_bytes());
         self.buf.push(b'~');
-        self.buf.extend_from_slice(&(values.len() as u32).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(values.len() as u32).to_le_bytes());
         self.buf.extend_from_slice(&[0u8; 3]);
         for v in values {
             self.buf.extend_from_slice(&v.to_le_bytes());
@@ -360,7 +377,9 @@ fn build_schema(keys: &[String], sigils: &[u8]) -> Vec<u8> {
         b.extend_from_slice(key.as_bytes());
         b.push(0x00);
     }
-    while b.len() % 8 != 0 { b.push(0x00); }
+    while b.len() % 8 != 0 {
+        b.push(0x00);
+    }
     b
 }
 
@@ -394,7 +413,9 @@ fn murmur3_64(data: &[u8]) -> u64 {
     let mut h: u64 = 0x9368_1D62_5531_3A99;
     for chunk in data.chunks(8) {
         let mut k = 0u64;
-        for (i, &b) in chunk.iter().enumerate() { k |= (b as u64) << (i * 8); }
+        for (i, &b) in chunk.iter().enumerate() {
+            k |= (b as u64) << (i * 8);
+        }
         k = k.wrapping_mul(0xFF51AFD7ED558CCD);
         k ^= k >> 33;
         h ^= k;

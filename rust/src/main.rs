@@ -1,12 +1,12 @@
+mod compiler;
+mod decoder;
 mod error;
 mod lexer;
 mod parser;
-mod compiler;
-mod decoder;
 mod writer;
 
-use std::path::Path;
 use error::NxsError;
+use std::path::Path;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -19,12 +19,18 @@ fn main() {
     let output_path = if args.len() >= 3 {
         args[2].clone()
     } else {
-        input_path.with_extension("nxb").to_string_lossy().to_string()
+        input_path
+            .with_extension("nxb")
+            .to_string_lossy()
+            .to_string()
     };
 
     let source = std::fs::read_to_string(input_path)
         .map_err(|e| NxsError::IoError(e.to_string()))
-        .unwrap_or_else(|e| { eprintln!("error: {e}"); std::process::exit(1); });
+        .unwrap_or_else(|e| {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        });
 
     let binary = compile(&source).unwrap_or_else(|e| {
         eprintln!("error: {e}");
@@ -33,9 +39,17 @@ fn main() {
 
     std::fs::write(&output_path, &binary)
         .map_err(|e| NxsError::IoError(e.to_string()))
-        .unwrap_or_else(|e| { eprintln!("error: {e}"); std::process::exit(1); });
+        .unwrap_or_else(|e| {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        });
 
-    println!("compiled {} → {} ({} bytes)", input_path.display(), output_path, binary.len());
+    println!(
+        "compiled {} → {} ({} bytes)",
+        input_path.display(),
+        output_path,
+        binary.len()
+    );
 }
 
 fn compile(source: &str) -> error::Result<Vec<u8>> {
@@ -143,22 +157,25 @@ mod tests {
     fn test_footer_magic() {
         let src = "x: =1";
         let bytes = compile(src).unwrap();
-        let footer = &bytes[bytes.len()-4..];
+        let footer = &bytes[bytes.len() - 4..];
         assert_eq!(footer, &0x2153584Eu32.to_le_bytes());
     }
 
     // ── Example file tests ──────────────────────────────────────────────────
 
     fn compile_file(path: &str) -> Vec<u8> {
-        let src = std::fs::read_to_string(path)
-            .unwrap_or_else(|_| panic!("cannot read {path}"));
+        let src = std::fs::read_to_string(path).unwrap_or_else(|_| panic!("cannot read {path}"));
         compile(&src).unwrap_or_else(|e| panic!("compile {path}: {e}"))
     }
 
     fn assert_valid_nxb(bytes: &[u8]) {
         assert!(bytes.len() >= 32, "output too short");
         assert_eq!(&bytes[0..4], &0x4E585342u32.to_le_bytes(), "bad file magic");
-        assert_eq!(&bytes[bytes.len()-4..], &0x2153584Eu32.to_le_bytes(), "bad footer magic");
+        assert_eq!(
+            &bytes[bytes.len() - 4..],
+            &0x2153584Eu32.to_le_bytes(),
+            "bad footer magic"
+        );
         // TailPtr must point inside the file
         let tail_ptr = u64::from_le_bytes(bytes[16..24].try_into().unwrap()) as usize;
         assert!(tail_ptr < bytes.len(), "TailPtr out of bounds");
@@ -171,10 +188,16 @@ mod tests {
         // Decode and check keys are recovered
         let decoded = decoder::decode(&bytes).expect("decode failed");
         assert!(!decoded.keys.is_empty(), "no keys in schema");
-        assert!(decoded.keys.contains(&"user".to_string()) ||
-                decoded.keys.contains(&"id".to_string()),
-                "expected user or id key, got: {:?}", decoded.keys);
-        println!("user_profile.nxb: {} bytes, {} schema keys", bytes.len(), decoded.keys.len());
+        assert!(
+            decoded.keys.contains(&"user".to_string()) || decoded.keys.contains(&"id".to_string()),
+            "expected user or id key, got: {:?}",
+            decoded.keys
+        );
+        println!(
+            "user_profile.nxb: {} bytes, {} schema keys",
+            bytes.len(),
+            decoded.keys.len()
+        );
     }
 
     #[test]
@@ -183,7 +206,11 @@ mod tests {
         assert_valid_nxb(&bytes);
         let decoded = decoder::decode(&bytes).expect("decode failed");
         assert!(!decoded.keys.is_empty());
-        println!("product_catalog.nxb: {} bytes, {} schema keys", bytes.len(), decoded.keys.len());
+        println!(
+            "product_catalog.nxb: {} bytes, {} schema keys",
+            bytes.len(),
+            decoded.keys.len()
+        );
     }
 
     #[test]
@@ -192,7 +219,11 @@ mod tests {
         assert_valid_nxb(&bytes);
         let decoded = decoder::decode(&bytes).expect("decode failed");
         assert!(!decoded.keys.is_empty());
-        println!("timeseries.nxb: {} bytes, {} schema keys", bytes.len(), decoded.keys.len());
+        println!(
+            "timeseries.nxb: {} bytes, {} schema keys",
+            bytes.len(),
+            decoded.keys.len()
+        );
     }
 
     #[test]
@@ -207,7 +238,7 @@ mod tests {
         w.end_object();
         let bytes = w.finish();
         assert_eq!(&bytes[0..4], &0x4E585342u32.to_le_bytes());
-        assert_eq!(&bytes[bytes.len()-4..], &0x2153584Eu32.to_le_bytes());
+        assert_eq!(&bytes[bytes.len() - 4..], &0x2153584Eu32.to_le_bytes());
         assert!(bytes.windows(8).any(|w| w == 1024i64.to_le_bytes()));
     }
 
@@ -219,7 +250,7 @@ mod tests {
         w.write_i64(writer::Slot(0), 42);
         w.end_object();
         let bytes = w.finish();
-        assert_eq!(&bytes[bytes.len()-4..], &0x2153584Eu32.to_le_bytes());
+        assert_eq!(&bytes[bytes.len() - 4..], &0x2153584Eu32.to_le_bytes());
         let tail_ptr = u64::from_le_bytes(bytes[16..24].try_into().unwrap()) as usize;
         assert!(tail_ptr < bytes.len());
     }
@@ -236,7 +267,7 @@ mod tests {
         w.end_object();
         let bytes = w.finish();
         assert_eq!(&bytes[0..4], &0x4E585342u32.to_le_bytes());
-        assert_eq!(&bytes[bytes.len()-4..], &0x2153584Eu32.to_le_bytes());
+        assert_eq!(&bytes[bytes.len() - 4..], &0x2153584Eu32.to_le_bytes());
     }
 
     #[test]
@@ -248,7 +279,12 @@ mod tests {
                 .unwrap_or_else(|_| panic!("cannot read {src_path}"));
             let bytes = compile(&src).unwrap_or_else(|e| panic!("{name}: {e}"));
             let ratio = bytes.len() as f64 / src.len() as f64;
-            println!("{name}: source={} B → binary={} B  ({:.2}x)", src.len(), bytes.len(), ratio);
+            println!(
+                "{name}: source={} B → binary={} B  ({:.2}x)",
+                src.len(),
+                bytes.len(),
+                ratio
+            );
             assert_valid_nxb(&bytes);
         }
     }

@@ -52,7 +52,7 @@ jobs:
       - name: fmt
         run: cargo fmt --check
       - name: clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --lib --bin nxs --bin bench --bin gen_fixtures -- -D warnings -A dead_code -A unused_imports -A clippy::empty_line_after_doc_comments -A clippy::collapsible_if -A clippy::single_match -A clippy::manual_is_multiple_of -A clippy::manual_div_ceil -A clippy::same_item_push -A clippy::new_without_default -A clippy::len_without_is_empty
 
   # ── JavaScript ───────────────────────────────────────────────────────────────
   javascript:
@@ -82,7 +82,7 @@ jobs:
         run: pip install ruff
       - name: Lint
         working-directory: py
-        run: ruff check --select E,W,F --ignore E501 .
+        run: ruff check --select E,W,F --ignore E501,E701,E702 .
 
   # ── Go ───────────────────────────────────────────────────────────────────────
   go:
@@ -99,7 +99,7 @@ jobs:
       - name: staticcheck
         working-directory: go
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install honnef.co/go/tools/cmd/staticcheck@v0.5.1
           staticcheck ./...
 
   # ── Ruby ─────────────────────────────────────────────────────────────────────

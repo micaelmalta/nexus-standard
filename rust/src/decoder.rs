@@ -2,20 +2,20 @@
 /// returning a flat list of (key_index, value_bytes) for inspection.
 use crate::error::{NxsError, Result};
 
-const MAGIC_FILE: u32   = 0x4E585342;
-const MAGIC_OBJ: u32    = 0x4E58534F;
-const MAGIC_LIST: u32   = 0x4E58534C;
+const MAGIC_FILE: u32 = 0x4E585342;
+const MAGIC_OBJ: u32 = 0x4E58534F;
+const MAGIC_LIST: u32 = 0x4E58534C;
 const MAGIC_FOOTER: u32 = 0x2153584E;
 
 // Sigil bytes
-const SIGIL_INT:    u8 = b'=';  // 0x3D
-const SIGIL_FLOAT:  u8 = b'~';  // 0x7E
-const SIGIL_BOOL:   u8 = b'?';  // 0x3F
-const SIGIL_STR:    u8 = b'"';  // 0x22
-const SIGIL_TIME:   u8 = b'@';  // 0x40
-const SIGIL_BINARY: u8 = b'<';  // 0x3C
-const SIGIL_LINK:   u8 = b'&';  // 0x26
-const SIGIL_NULL:   u8 = b'^';  // 0x5E
+const SIGIL_INT: u8 = b'='; // 0x3D
+const SIGIL_FLOAT: u8 = b'~'; // 0x7E
+const SIGIL_BOOL: u8 = b'?'; // 0x3F
+const SIGIL_STR: u8 = b'"'; // 0x22
+const SIGIL_TIME: u8 = b'@'; // 0x40
+const SIGIL_BINARY: u8 = b'<'; // 0x3C
+const SIGIL_LINK: u8 = b'&'; // 0x26
+const SIGIL_NULL: u8 = b'^'; // 0x5E
 
 pub struct DecodedFile {
     pub version: u16,
@@ -48,7 +48,9 @@ fn murmur3_64(data: &[u8]) -> u64 {
     let mut h: u64 = 0x9368_1D62_5531_3A99;
     for chunk in data.chunks(8) {
         let mut k = 0u64;
-        for (i, &b) in chunk.iter().enumerate() { k |= (b as u64) << (i * 8); }
+        for (i, &b) in chunk.iter().enumerate() {
+            k |= (b as u64) << (i * 8);
+        }
         k = k.wrapping_mul(0xFF51AFD7ED558CCD);
         k ^= k >> 33;
         h ^= k;
@@ -72,15 +74,19 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
         return Err(NxsError::BadMagic);
     }
 
-    let footer_magic = u32::from_le_bytes(data[data.len()-4..].try_into().map_err(|_| NxsError::OutOfBounds)?);
+    let footer_magic = u32::from_le_bytes(
+        data[data.len() - 4..]
+            .try_into()
+            .map_err(|_| NxsError::OutOfBounds)?,
+    );
     if footer_magic != MAGIC_FOOTER {
         return Err(NxsError::BadMagic);
     }
 
-    let version   = u16::from_le_bytes(data[4..6].try_into().map_err(|_| NxsError::OutOfBounds)?);
-    let flags     = u16::from_le_bytes(data[6..8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+    let version = u16::from_le_bytes(data[4..6].try_into().map_err(|_| NxsError::OutOfBounds)?);
+    let flags = u16::from_le_bytes(data[6..8].try_into().map_err(|_| NxsError::OutOfBounds)?);
     let dict_hash = u64::from_le_bytes(data[8..16].try_into().map_err(|_| NxsError::OutOfBounds)?);
-    let tail_ptr  = u64::from_le_bytes(data[16..24].try_into().map_err(|_| NxsError::OutOfBounds)?);
+    let tail_ptr = u64::from_le_bytes(data[16..24].try_into().map_err(|_| NxsError::OutOfBounds)?);
 
     let schema_embedded = flags & 0x0002 != 0;
     let mut pos = 32usize;
@@ -89,22 +95,32 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
 
     if schema_embedded && pos < data.len() {
         let schema_start = pos;
-        let key_count = u16::from_le_bytes(data[pos..pos+2].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize;
+        let key_count = u16::from_le_bytes(
+            data[pos..pos + 2]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
         pos += 2;
         // TypeManifest
-        if pos + key_count > data.len() { return Err(NxsError::OutOfBounds); }
-        key_sigils = data[pos..pos+key_count].to_vec();
+        if pos + key_count > data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        key_sigils = data[pos..pos + key_count].to_vec();
         pos += key_count;
         // StringPool
         for _ in 0..key_count {
             let start = pos;
-            while pos < data.len() && data[pos] != 0 { pos += 1; }
+            while pos < data.len() && data[pos] != 0 {
+                pos += 1;
+            }
             let name = String::from_utf8_lossy(&data[start..pos]).to_string();
             keys.push(name);
             pos += 1; // skip null terminator
         }
         // align to 8
-        while pos % 8 != 0 { pos += 1; }
+        while pos % 8 != 0 {
+            pos += 1;
+        }
         let schema_end = pos;
 
         // Validate DictHash
@@ -124,9 +140,17 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
     };
 
     // Read tail-index for record count — guard against overflow from large tail_ptr values.
-    let tail_offset = if tail_ptr as usize as u64 == tail_ptr { tail_ptr as usize } else { return Err(NxsError::OutOfBounds) };
+    let tail_offset = if tail_ptr as usize as u64 == tail_ptr {
+        tail_ptr as usize
+    } else {
+        return Err(NxsError::OutOfBounds);
+    };
     let record_count = if tail_offset.saturating_add(4) <= data.len() {
-        u32::from_le_bytes(data[tail_offset..tail_offset+4].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize
+        u32::from_le_bytes(
+            data[tail_offset..tail_offset + 4]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize
     } else {
         0
     };
@@ -147,30 +171,57 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
 }
 
 /// Decode a single record at the given absolute offset.
-pub fn decode_record_at(data: &[u8], offset: usize, keys: &[String], sigils: &[u8]) -> Result<Vec<(String, DecodedValue)>> {
+pub fn decode_record_at(
+    data: &[u8],
+    offset: usize,
+    keys: &[String],
+    sigils: &[u8],
+) -> Result<Vec<(String, DecodedValue)>> {
     decode_object(data, offset, keys, sigils)
 }
 
-fn decode_object(data: &[u8], offset: usize, keys: &[String], sigils: &[u8]) -> Result<Vec<(String, DecodedValue)>> {
+fn decode_object(
+    data: &[u8],
+    offset: usize,
+    keys: &[String],
+    sigils: &[u8],
+) -> Result<Vec<(String, DecodedValue)>> {
     let mut pos = offset;
 
-    if pos + 8 > data.len() { return Err(NxsError::OutOfBounds); }
-    let magic = u32::from_le_bytes(data[pos..pos+4].try_into().map_err(|_| NxsError::OutOfBounds)?);
-    if magic != MAGIC_OBJ { return Err(NxsError::BadMagic); }
+    if pos + 8 > data.len() {
+        return Err(NxsError::OutOfBounds);
+    }
+    let magic = u32::from_le_bytes(
+        data[pos..pos + 4]
+            .try_into()
+            .map_err(|_| NxsError::OutOfBounds)?,
+    );
+    if magic != MAGIC_OBJ {
+        return Err(NxsError::BadMagic);
+    }
     pos += 4;
 
-    let _obj_len = u32::from_le_bytes(data[pos..pos+4].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize;
+    let _obj_len = u32::from_le_bytes(
+        data[pos..pos + 4]
+            .try_into()
+            .map_err(|_| NxsError::OutOfBounds)?,
+    ) as usize;
     pos += 4;
 
     // Read LEB128 bitmask
     let mut present_bits: Vec<bool> = Vec::new();
     loop {
-        if pos >= data.len() { return Err(NxsError::OutOfBounds); }
-        let byte = data[pos]; pos += 1;
+        if pos >= data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        let byte = data[pos];
+        pos += 1;
         for bit in 0..7 {
             present_bits.push((byte >> bit) & 1 == 1);
         }
-        if byte & 0x80 == 0 { break; }
+        if byte & 0x80 == 0 {
+            break;
+        }
     }
 
     // Count present fields
@@ -179,8 +230,14 @@ fn decode_object(data: &[u8], offset: usize, keys: &[String], sigils: &[u8]) -> 
     // Read offset table (u16 each)
     let mut offsets: Vec<usize> = Vec::new();
     for _ in 0..present_count {
-        if pos + 2 > data.len() { return Err(NxsError::OutOfBounds); }
-        let off = u16::from_le_bytes(data[pos..pos+2].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize;
+        if pos + 2 > data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        let off = u16::from_le_bytes(
+            data[pos..pos + 2]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
         offsets.push(offset + off);
         pos += 2;
     }
@@ -189,8 +246,11 @@ fn decode_object(data: &[u8], offset: usize, keys: &[String], sigils: &[u8]) -> 
     let mut fields = Vec::new();
     let mut offset_idx = 0;
     for (bit_idx, &present) in present_bits.iter().enumerate() {
-        if !present { continue; }
-        let key_name = keys.get(bit_idx)
+        if !present {
+            continue;
+        }
+        let key_name = keys
+            .get(bit_idx)
             .cloned()
             .unwrap_or_else(|| format!("key_{bit_idx}"));
         let sigil = sigils.get(bit_idx).copied().unwrap_or(0);
@@ -204,16 +264,31 @@ fn decode_object(data: &[u8], offset: usize, keys: &[String], sigils: &[u8]) -> 
     Ok(fields)
 }
 
-fn decode_value_at(data: &[u8], offset: usize, sigil: u8, keys: &[String], sigils: &[u8]) -> Result<DecodedValue> {
-    if offset >= data.len() { return Err(NxsError::OutOfBounds); }
+fn decode_value_at(
+    data: &[u8],
+    offset: usize,
+    sigil: u8,
+    keys: &[String],
+    sigils: &[u8],
+) -> Result<DecodedValue> {
+    let _ = (keys, sigils); // used by recursive calls on nested objects
+    if offset >= data.len() {
+        return Err(NxsError::OutOfBounds);
+    }
 
     // Check for nested object or list magic first
     if offset + 4 <= data.len() {
-        let maybe_magic = u32::from_le_bytes(data[offset..offset+4].try_into().map_err(|_| NxsError::OutOfBounds)?);
+        let maybe_magic = u32::from_le_bytes(
+            data[offset..offset + 4]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        );
         if maybe_magic == MAGIC_OBJ {
             // Nested objects in the compiler path use a locally-scoped key schema,
             // not the global one. Return Raw to avoid crashing with the wrong schema.
-            return Ok(DecodedValue::Raw(data[offset..offset+8.min(data.len()-offset)].to_vec()));
+            return Ok(DecodedValue::Raw(
+                data[offset..offset + 8.min(data.len() - offset)].to_vec(),
+            ));
         }
         if maybe_magic == MAGIC_LIST {
             return decode_list(data, offset);
@@ -228,48 +303,88 @@ fn decode_value_at(data: &[u8], offset: usize, sigil: u8, keys: &[String], sigil
     // Use sigil to decode the correct type
     match sigil {
         SIGIL_INT => {
-            if offset + 8 > data.len() { return Err(NxsError::OutOfBounds); }
-            let v = i64::from_le_bytes(data[offset..offset+8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+            if offset + 8 > data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            let v = i64::from_le_bytes(
+                data[offset..offset + 8]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            );
             Ok(DecodedValue::Int(v))
         }
         SIGIL_FLOAT => {
-            if offset + 8 > data.len() { return Err(NxsError::OutOfBounds); }
-            let bits = u64::from_le_bytes(data[offset..offset+8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+            if offset + 8 > data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            let bits = u64::from_le_bytes(
+                data[offset..offset + 8]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            );
             Ok(DecodedValue::Float(f64::from_bits(bits)))
         }
-        SIGIL_BOOL => {
-            Ok(DecodedValue::Bool(data[offset] != 0))
-        }
+        SIGIL_BOOL => Ok(DecodedValue::Bool(data[offset] != 0)),
         SIGIL_STR => {
-            if offset + 4 > data.len() { return Err(NxsError::OutOfBounds); }
-            let len = u32::from_le_bytes(data[offset..offset+4].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize;
+            if offset + 4 > data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            let len = u32::from_le_bytes(
+                data[offset..offset + 4]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            ) as usize;
             // Guard against garbage lengths (compiler uses SIGIL_STR generically)
             if len > 1024 * 1024 || offset + 4 + len > data.len() {
                 // Treat as raw i64 — the field is not a string despite the sigil
                 if offset + 8 <= data.len() {
-                    let v = i64::from_le_bytes(data[offset..offset+8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+                    let v = i64::from_le_bytes(
+                        data[offset..offset + 8]
+                            .try_into()
+                            .map_err(|_| NxsError::OutOfBounds)?,
+                    );
                     return Ok(DecodedValue::Int(v));
                 }
                 return Ok(DecodedValue::Raw(data[offset..].to_vec()));
             }
-            let s = String::from_utf8_lossy(&data[offset+4..offset+4+len]).to_string();
+            let s = String::from_utf8_lossy(&data[offset + 4..offset + 4 + len]).to_string();
             Ok(DecodedValue::Str(s))
         }
         SIGIL_TIME => {
-            if offset + 8 > data.len() { return Err(NxsError::OutOfBounds); }
-            let v = i64::from_le_bytes(data[offset..offset+8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+            if offset + 8 > data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            let v = i64::from_le_bytes(
+                data[offset..offset + 8]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            );
             Ok(DecodedValue::Time(v))
         }
         SIGIL_BINARY => {
-            if offset + 4 > data.len() { return Err(NxsError::OutOfBounds); }
-            let len = u32::from_le_bytes(data[offset..offset+4].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize;
-            if offset + 4 + len > data.len() { return Err(NxsError::OutOfBounds); }
-            Ok(DecodedValue::Binary(data[offset+4..offset+4+len].to_vec()))
+            if offset + 4 > data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            let len = u32::from_le_bytes(
+                data[offset..offset + 4]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            ) as usize;
+            if offset + 4 + len > data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            Ok(DecodedValue::Binary(
+                data[offset + 4..offset + 4 + len].to_vec(),
+            ))
         }
         _ => {
             // Unknown sigil — return raw i64 as best-effort
             if offset + 8 <= data.len() {
-                let v = i64::from_le_bytes(data[offset..offset+8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+                let v = i64::from_le_bytes(
+                    data[offset..offset + 8]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
+                );
                 Ok(DecodedValue::Int(v))
             } else {
                 Ok(DecodedValue::Raw(data[offset..].to_vec()))
@@ -279,26 +394,48 @@ fn decode_value_at(data: &[u8], offset: usize, sigil: u8, keys: &[String], sigil
 }
 
 fn decode_list(data: &[u8], offset: usize) -> Result<DecodedValue> {
-    if offset + 16 > data.len() { return Err(NxsError::OutOfBounds); }
-    let magic = u32::from_le_bytes(data[offset..offset+4].try_into().map_err(|_| NxsError::OutOfBounds)?);
-    if magic != MAGIC_LIST { return Err(NxsError::BadMagic); }
+    if offset + 16 > data.len() {
+        return Err(NxsError::OutOfBounds);
+    }
+    let magic = u32::from_le_bytes(
+        data[offset..offset + 4]
+            .try_into()
+            .map_err(|_| NxsError::OutOfBounds)?,
+    );
+    if magic != MAGIC_LIST {
+        return Err(NxsError::BadMagic);
+    }
     let elem_sigil = data[offset + 8];
-    let elem_count = u32::from_le_bytes(data[offset+9..offset+13].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize;
+    let elem_count = u32::from_le_bytes(
+        data[offset + 9..offset + 13]
+            .try_into()
+            .map_err(|_| NxsError::OutOfBounds)?,
+    ) as usize;
     let data_start = offset + 16;
     let mut items = Vec::with_capacity(elem_count);
     for i in 0..elem_count {
         let elem_off = data_start + i * 8;
-        if elem_off + 8 > data.len() { return Err(NxsError::OutOfBounds); }
+        if elem_off + 8 > data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
         let v = match elem_sigil {
             SIGIL_INT => {
-                let v = i64::from_le_bytes(data[elem_off..elem_off+8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+                let v = i64::from_le_bytes(
+                    data[elem_off..elem_off + 8]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
+                );
                 DecodedValue::Int(v)
             }
             SIGIL_FLOAT => {
-                let bits = u64::from_le_bytes(data[elem_off..elem_off+8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+                let bits = u64::from_le_bytes(
+                    data[elem_off..elem_off + 8]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
+                );
                 DecodedValue::Float(f64::from_bits(bits))
             }
-            _ => DecodedValue::Raw(data[elem_off..elem_off+8].to_vec()),
+            _ => DecodedValue::Raw(data[elem_off..elem_off + 8].to_vec()),
         };
         items.push(v);
     }
