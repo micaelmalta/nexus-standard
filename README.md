@@ -107,7 +107,7 @@ cd js && python3 server.py   # required for SharedArrayBuffer (sets COOP/COEP he
 
 ## Example
 
-A `.nxs` source file is plain text. Every value carries a sigil that declares its machine type:
+Every value in a `.nxs` file carries a sigil that declares its machine type — no schema file, no generated code:
 
 ```text
 user {
@@ -127,35 +127,16 @@ user {
 }
 ```
 
-Compile it with the Rust tool:
+| Sigil | Type | Binary encoding |
+| :--- | :--- | :--- |
+| `=` | Int64 | 8 bytes LE |
+| `~` | Float64 | 8 bytes IEEE 754 LE |
+| `?` | Bool | 1 byte + 7 padding |
+| `$` | Keyword (interned) | 2-byte dict index |
+| `"` | String | u32 length + UTF-8 bytes |
+| `@` | Timestamp (Unix ns) | 8 bytes LE |
 
-```bash
-./target/release/nxs user_profile.nxs
-# compiled user_profile.nxs → user_profile.nxb (312 bytes)
-```
-
-Read one field from the binary in any language without loading the rest:
-
-```js
-// JavaScript
-const reader = new NxsReader(await fetch("user_profile.nxb").then(r => r.arrayBuffer()));
-reader.record(0).getStr("username");  // "alice_wonder" — decoded on access
-```
-
-```go
-// Go
-r, _ := nxs.NewReader(data)
-obj := r.Record(0)
-username, _ := obj.GetStr("username")  // "alice_wonder"
-```
-
-```python
-# Python
-reader = NxsReader(open("user_profile.nxb", "rb").read())
-reader.record(0).get_str("username")  # "alice_wonder"
-```
-
-More examples in [`examples/`](./examples/) and [`GETTING_STARTED.md`](./GETTING_STARTED.md).
+More examples in [`examples/`](./examples/) and full API usage in [`GETTING_STARTED.md`](./GETTING_STARTED.md).
 
 ---
 
