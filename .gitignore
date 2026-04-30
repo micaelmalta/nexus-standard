@@ -1,3 +1,6 @@
+# Para-Programmatic Context
+context
+
 # Rust
 rust/target
 # rust/Cargo.lock is intentionally committed for reproducible builds
