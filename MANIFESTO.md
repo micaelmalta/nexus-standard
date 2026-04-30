@@ -34,7 +34,7 @@ These are not contradictions. They are the design brief.
 
 NXS is bi-modal. The text format (`.nxs`) is a sigil-typed source language. The binary format (`.nxb`) is what the machine reads.
 
-In `.nxs`, every value declares its type with a single leading character — its sigil. `=` for Int64, `~` for Float64, `?` for Bool, `"` for String, `@` for Time. No quotes around keys unless you want them. No trailing commas. No schema file to maintain separately. The source is the schema.
+In `.nxs`, every value declares its type with a single leading character — its sigil. `=` for Int64, `~` for Float64, `?` for Bool, `"` for String, `@` for Timestamp, `$` for interned Keyword, `<>` for raw Binary, `&` for Link, `!` for compile-time Macro, `^` for explicit Null. No quotes around keys unless you want them. No trailing commas. No schema file to maintain separately. The source is the schema.
 
 ```
 user {
