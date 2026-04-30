@@ -199,4 +199,4 @@ Every language has its own GitHub Actions workflow triggered on changes to its d
 
 ## Status
 
-**Proof of concept.** The spec is complete and all ten language implementations pass their test suites. Not production-ready — no versioned release, no stability guarantee on the binary layout, no formal conformance test suite. Benchmarks are real but run on a single machine against synthetic data.
+**Stable (v1.0).** The spec is complete, the binary format is frozen, and all ten language implementations pass the conformance test suite. The `conformance/` directory contains 14 test vectors (11 positive, 3 negative) validated by runners in Rust, JS, Python, Go, Ruby, PHP, C, Swift, Kotlin, and C#. Benchmarks are real but run on a single machine against synthetic data.

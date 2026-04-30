@@ -5,7 +5,7 @@ This is the formal, exhaustive specification for the **Nexus Standard (NXS)**. T
 # RFC 001: The Nexus Standard (NXS) Specification v1.0
 
 **Date:** April 30, 2026  
-**Status:** Final Specification  
+**Status:** Stable (v1.0)  
 **Editors:** Gemini AI & Collaborator  
 **MIME Types:** `application/nxb` (Binary), `application/nxs` (Text)
 
@@ -270,3 +270,16 @@ user {
 ---
 
 **End of Specification**
+
+---
+
+## Changelog
+
+### v1.0.0 — 2026-04-30 (First Stable Release)
+
+- Format frozen: preamble layout, schema header, object anatomy, list encoding, and tail-index structure are normative and backwards-incompatible changes are prohibited.
+- DictHash validation (MurmurHash3-64 over the schema header) is now mandatory for all conforming readers.
+- TypeManifest sigils in the schema header (`=`, `~`, `?`, `"`, `@`, `<`) are now emitted with per-slot type information by the reference writer.
+- Conformance corpus (`conformance/`) added: 11 positive vectors and 3 negative vectors, validated by runners for Rust, JS, Python, Go, Ruby, PHP, C, Swift, Kotlin, and C#.
+- Status promoted from "Final Specification" to "Stable (v1.0)" following successful cross-language conformance suite.
+- No binary format changes from the pre-release draft.

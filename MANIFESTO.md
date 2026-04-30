@@ -84,9 +84,7 @@ NXS is not a replacement for JSON over HTTP. JSON is excellent there.
 
 NXS is not a database. It has no query planner, no indexing beyond the tail-index, no transaction model.
 
-NXS is not finished. The spec is complete. The ten language implementations pass their test suites. The binary layout is not yet frozen. There are no versioned releases, no stability guarantees, no conformance test suite. This is a proof of concept, written to test whether the design holds together under real implementation pressure.
-
-It does.
+NXS v1.0 is complete. The spec is stable, the binary format is frozen, and all ten language implementations pass the conformance test suite. The design held up under real implementation pressure.
 
 ---
 
@@ -116,8 +114,8 @@ The point is not comprehensiveness for its own sake. The point is that a `.nxb` 
 
 The spec is in `SPEC.md`. The RFC with security guidance and implementation notes is in `RFC.md`. Working code for all ten languages is in this repository. The browser demos — live at [nxs.covibe.us](https://nxs.covibe.us/index.html) — show the format under conditions that motivated the design: 14 million records, 60 FPS frame updates, 4 workers sharing one buffer, virtual scroll over 10 million log lines.
 
-Implement it, break it, tell us where the spec is ambiguous. That is how a proof of concept becomes a standard.
+Implement it, extend it, tell us where the spec is ambiguous.
 
 ---
 
-*NXS — Nexus Standard. Experimental. April 2026.*
+*NXS — Nexus Standard. Stable v1.0. April 2026.*
