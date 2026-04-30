@@ -150,6 +150,33 @@ check(
     "got=$gotBal1, expected=$expBal1"
 );
 
+// ── Security tests ───────────────────────────────────────────────────────────
+
+$badMagic = $nxbBytes;
+$badMagic[0] = "\x00";
+try {
+    new Nxs\Reader($badMagic);
+    check('bad magic throws ERR_BAD_MAGIC', false, 'no exception');
+} catch (Nxs\NxsException $e) {
+    check('bad magic throws ERR_BAD_MAGIC', str_contains($e->getMessage(), 'ERR_BAD_MAGIC'), $e->getMessage());
+}
+
+try {
+    new Nxs\Reader(substr($nxbBytes, 0, 16));
+    check('truncated file throws NxsException', false, 'no exception');
+} catch (Nxs\NxsException $e) {
+    check('truncated file throws NxsException', true);
+}
+
+$badHash = $nxbBytes;
+$badHash[8] = chr(ord($badHash[8]) ^ 0xFF);
+try {
+    new Nxs\Reader($badHash);
+    check('corrupt DictHash throws ERR_DICT_MISMATCH', false, 'no exception');
+} catch (Nxs\NxsException $e) {
+    check('corrupt DictHash throws ERR_DICT_MISMATCH', str_contains($e->getMessage(), 'ERR_DICT_MISMATCH'), $e->getMessage());
+}
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 
 echo str_repeat('─', 56) . "\n";

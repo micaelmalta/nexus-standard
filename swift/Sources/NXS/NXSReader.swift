@@ -90,6 +90,13 @@ public final class NXSReader {
                 kIndex[name] = i
                 off = end + 1
             }
+            // Pad to 8-byte boundary to find schema end
+            if off % 8 != 0 { off += 8 - (off % 8) }
+            let schemaEnd = off
+            let computed = nxsMurmur3_64(data, 32, schemaEnd - 32)
+            if computed != dictHash {
+                throw NXSError.badMagic("ERR_DICT_MISMATCH: schema hash mismatch")
+            }
         }
 
         keys      = ks
@@ -250,6 +257,30 @@ public final class NXSReader {
     func rawData() -> Data { data }
     func keyIdx()  -> [String: Int] { keyIndex }
     func kSigils() -> [UInt8] { keySigils }
+
+    // ── DictHash validation ───────────────────────────────────────────────────
+
+}
+
+private func nxsMurmur3_64(_ data: Data, _ off: Int, _ len: Int) -> UInt64 {
+    let C1: UInt64 = 0xFF51AFD7ED558CCD
+    let C2: UInt64 = 0xC4CEB9FE1A85EC53
+    var h: UInt64 = 0x93681D6255313A99
+    var p = off
+    let end = off + len
+    while p < end {
+        var k: UInt64 = 0
+        for i in 0..<8 where p + i < end {
+            k |= UInt64(data[p + i]) << (i * 8)
+        }
+        k = k &* C1; k ^= k >> 33
+        h ^= k
+        h = h &* C2; h ^= h >> 33
+        p += 8
+    }
+    h ^= UInt64(len); h ^= h >> 33
+    h = h &* C1; h ^= h >> 33
+    return h
 }
 
 // ── Object ────────────────────────────────────────────────────────────────────

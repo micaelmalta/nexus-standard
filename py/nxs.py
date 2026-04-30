@@ -49,6 +49,32 @@ class NxsError(Exception):
         self.code = code
 
 
+def _murmur3_64(data: memoryview) -> int:
+    """MurmurHash3-64 used to validate the schema DictHash."""
+    MASK = 0xFFFFFFFFFFFFFFFF
+    C1   = 0xFF51AFD7ED558CCD
+    C2   = 0xC4CEB9FE1A85EC53
+    h    = 0x93681D6255313A99
+    length = len(data)
+    i = 0
+    while i < length:
+        k = 0
+        for b in range(8):
+            if i + b < length:
+                k |= data[i + b] << (b * 8)
+        k = (k * C1) & MASK
+        k ^= k >> 33
+        h ^= k
+        h = (h * C2) & MASK
+        h ^= h >> 33
+        i += 8
+    h ^= length
+    h ^= h >> 33
+    h = (h * C1) & MASK
+    h ^= h >> 33
+    return h
+
+
 class NxsReader:
     """Parses the preamble, schema, and tail-index of a .nxb buffer.
 
@@ -60,6 +86,7 @@ class NxsReader:
         "version", "flags", "dict_hash", "tail_ptr",
         "keys", "key_sigils", "key_index",
         "record_count", "_tail_start",
+        "_schema_end",
     )
 
     def __init__(self, buffer: Union[bytes, bytearray, memoryview]) -> None:
@@ -94,6 +121,10 @@ class NxsReader:
         self.key_index: dict[str, int] = {}
         if self.flags & 0x0002:
             self._read_schema(32)
+            schema_bytes = self.mv[32:self._schema_end]
+            computed = _murmur3_64(schema_bytes)
+            if computed != self.dict_hash:
+                raise NxsError("ERR_DICT_MISMATCH", "schema hash mismatch")
 
         # Tail-index
         self._read_tail_index()
@@ -114,6 +145,9 @@ class NxsReader:
             consumed = end + 1
 
         self.key_index = {k: i for i, k in enumerate(self.keys)}
+        offset += consumed
+        # Pad to 8-byte boundary
+        self._schema_end = (offset + 7) & ~7
 
     def _read_tail_index(self) -> None:
         p = self.tail_ptr

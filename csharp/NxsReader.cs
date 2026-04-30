@@ -77,6 +77,12 @@ public sealed class NxsReader
                 _keyIndex[ks[i]] = i;
                 off++; // skip NUL
             }
+            // Pad to 8-byte boundary to find schema end
+            if (off % 8 != 0) off += 8 - (off % 8);
+            int schemaEnd = off;
+            ulong computed = Murmur3_64(data, 32, schemaEnd - 32);
+            if (computed != DictHash)
+                throw new NxsException("ERR_DICT_MISMATCH", "schema hash mismatch");
         }
 
         Keys      = ks;
@@ -198,6 +204,27 @@ public sealed class NxsReader
     internal int DataSize => _data.Length;
     internal byte DataAt(int off) => _data[off];
     internal Dictionary<string, int> KeyIndex => _keyIndex;
+
+    // ── DictHash validation ───────────────────────────────────────────────────
+
+    private static ulong Murmur3_64(byte[] data, int offset, int length)
+    {
+        const ulong C1 = 0xFF51AFD7ED558CCDUL;
+        const ulong C2 = 0xC4CEB9FE1A85EC53UL;
+        ulong h = 0x93681D6255313A99UL;
+        int p = offset, end = offset + length;
+        while (p < end) {
+            ulong k = 0;
+            for (int i = 0; i < 8 && p + i < end; i++)
+                k |= (ulong)data[p + i] << (i * 8);
+            k *= C1; k ^= k >> 33;
+            h ^= k; h *= C2; h ^= h >> 33;
+            p += 8;
+        }
+        h ^= (ulong)length; h ^= h >> 33;
+        h *= C1; h ^= h >> 33;
+        return h;
+    }
 
     // Locate slot's value offset inside object at objOffset, or -1.
     internal int ScanOffset(int objOffset, int slot)

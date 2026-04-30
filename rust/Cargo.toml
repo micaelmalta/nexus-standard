@@ -5,6 +5,10 @@ edition = "2024"
 authors = ["Micael Malta"]
 license = "MIT"
 
+[lib]
+name = "nxs"
+path = "src/lib.rs"
+
 [[bin]]
 name = "nxs"
 path = "src/main.rs"

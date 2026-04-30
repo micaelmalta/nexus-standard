@@ -139,6 +139,29 @@ puts
   },
 ].each { |r| r ? (passes += 1) : (fails += 1) }
 
+# ── Security tests ──────────────────────────────────────────────────────────
+[
+  check("bad magic raises ERR_BAD_MAGIC") {
+    bad = buf.dup; bad.setbyte(0, 0x00)
+    begin Nxs::Reader.new(bad); false
+    rescue Nxs::NxsError => e; e.code == "ERR_BAD_MAGIC"
+    end
+  },
+
+  check("truncated file raises NxsError") {
+    begin Nxs::Reader.new(buf[0, 16]); false
+    rescue Nxs::NxsError; true
+    end
+  },
+
+  check("corrupt DictHash raises ERR_DICT_MISMATCH") {
+    bad = buf.dup; bad.setbyte(8, bad.getbyte(8) ^ 0xFF)
+    begin Nxs::Reader.new(bad); false
+    rescue Nxs::NxsError => e; e.code == "ERR_DICT_MISMATCH"
+    end
+  },
+].each { |r| r ? (passes += 1) : (fails += 1) }
+
 puts
 puts "━" * 60
 puts "  Results: #{passes} passed, #{fails} failed"

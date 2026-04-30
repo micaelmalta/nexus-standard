@@ -141,6 +141,32 @@ function rdU64AsNumber(bytes, off) {
   return hi * 0x100000000 + lo;
 }
 
+// ── MurmurHash3-64 (schema integrity check) ──────────────────────────────────
+
+function murmur3_64(bytes, offset, length) {
+  const C1 = 0xFF51AFD7ED558CCDn;
+  const C2 = 0xC4CEB9FE1A85EC53n;
+  const MASK = 0xFFFFFFFFFFFFFFFFn;
+  let h = 0x93681D6255313A99n;
+  const end = offset + length;
+  for (let p = offset; p < end; p += 8) {
+    let k = 0n;
+    for (let i = 0; i < 8 && p + i < end; i++) {
+      k |= BigInt(bytes[p + i]) << BigInt(i * 8);
+    }
+    k = (k * C1) & MASK;
+    k ^= k >> 33n;
+    h ^= k;
+    h = (h * C2) & MASK;
+    h ^= h >> 33n;
+  }
+  h ^= BigInt(length);
+  h ^= h >> 33n;
+  h = (h * C1) & MASK;
+  h ^= h >> 33n;
+  return h;
+}
+
 // ── Main reader ─────────────────────────────────────────────────────────────
 
 export class NxsReader {
@@ -178,6 +204,10 @@ export class NxsReader {
     this.keySigils = [];
     if (this.flags & 0x0002) { // Schema Embedded
       this._readSchema(32);
+      const computedHash = murmur3_64(this.bytes, 32, this._schemaEnd - 32);
+      if (computedHash !== this.dictHash) {
+        throw new NxsError("ERR_DICT_MISMATCH", "schema hash mismatch");
+      }
     }
 
     // Tail-index

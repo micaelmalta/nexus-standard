@@ -24,6 +24,7 @@ typedef enum {
     NXS_ERR_KEY_NOT_FOUND  = 3,
     NXS_ERR_FIELD_ABSENT   = 4,
     NXS_ERR_ALLOC          = 5,
+    NXS_ERR_DICT_MISMATCH  = 6,
 } nxs_err_t;
 
 // ── Reader ────────────────────────────────────────────────────────────────────

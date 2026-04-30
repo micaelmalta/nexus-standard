@@ -28,6 +28,29 @@ static inline double rd_f64(const uint8_t *p) {
 #define MAGIC_FOOTER 0x2153584Eu
 #define FLAG_SCHEMA  0x0002u
 
+// ── MurmurHash3-64 (schema integrity check) ───────────────────────────────────
+
+static uint64_t murmur3_64(const uint8_t *data, size_t len) {
+    uint64_t h = 0x93681D6255313A99ULL;
+    size_t i = 0;
+    while (i < len) {
+        uint64_t k = 0;
+        for (int b = 0; b < 8 && i + (size_t)b < len; b++)
+            k |= (uint64_t)data[i + b] << (b * 8);
+        k *= 0xFF51AFD7ED558CCDULL;
+        k ^= k >> 33;
+        h ^= k;
+        h *= 0xC4CEB9FE1A85EC53ULL;
+        h ^= h >> 33;
+        i += 8;
+    }
+    h ^= (uint64_t)len;
+    h ^= h >> 33;
+    h *= 0xFF51AFD7ED558CCDULL;
+    h ^= h >> 33;
+    return h;
+}
+
 // ── Open / close ──────────────────────────────────────────────────────────────
 
 nxs_err_t nxs_open(nxs_reader_t *r, const uint8_t *data, size_t size) {
@@ -68,6 +91,10 @@ nxs_err_t nxs_open(nxs_reader_t *r, const uint8_t *data, size_t size) {
             pool_used += len + 1;
             off++; // skip NUL
         }
+        // Pad to 8-byte boundary
+        size_t schema_end = (off + 7) & ~(size_t)7;
+        uint64_t computed = murmur3_64(data + 32, schema_end - 32);
+        if (computed != r->dict_hash) return NXS_ERR_DICT_MISMATCH;
     }
 
     // Tail-index

@@ -38,3 +38,31 @@ jobs:
             ./target/release/nxs "$f"
             echo "compiled $f"
           done
+
+  fuzz:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-nightly-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-nightly-
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Fuzz decode (60s)
+        run: cargo fuzz run fuzz_decode -- -max_total_time=60
+
+      - name: Fuzz writer roundtrip (60s)
+        run: cargo fuzz run fuzz_writer_roundtrip -- -max_total_time=60

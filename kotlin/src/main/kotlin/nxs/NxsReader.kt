@@ -63,6 +63,11 @@ class NxsReader(private val data: ByteArray) {
                 ks.add(name); ki[name] = i
                 off = end + 1
             }
+            // Pad to 8-byte boundary to find schema end
+            if (off % 8 != 0) off += 8 - (off % 8)
+            val schemaEnd = off
+            val computed = murmur3_64(data, 32, schemaEnd - 32)
+            if (computed != dictHash) throw NxsError("ERR_DICT_MISMATCH", "schema hash mismatch")
         }
 
         keys      = ks
@@ -167,6 +172,27 @@ class NxsReader(private val data: ByteArray) {
             m = if (m == null || v > m) v else m
         }
         return m
+    }
+
+    // ── DictHash validation ───────────────────────────────────────────────────
+
+    private fun murmur3_64(data: ByteArray, offset: Int, length: Int): Long {
+        val C1 = -0xAE502812AA7333L   // 0xFF51AFD7ED558CCD as signed Long
+        val C2 = -0x3B314601E57A13ADL // 0xC4CEB9FE1A85EC53 as signed Long
+        var h = -0x6C97E29DAACEC567L  // 0x93681D6255313A99 as signed Long
+        var p = offset
+        val end = offset + length
+        while (p < end) {
+            var k = 0L
+            for (i in 0 until 8) if (p + i < end) k = k or ((data[p + i].toLong() and 0xFF) shl (i * 8))
+            k *= C1; k = k xor (k ushr 33)
+            h = h xor k
+            h *= C2; h = h xor (h ushr 33)
+            p += 8
+        }
+        h = h xor length.toLong(); h = h xor (h ushr 33)
+        h *= C1; h = h xor (h ushr 33)
+        return h
     }
 
     // Returns absolute offset of slot's value in object at objOffset, or -1.

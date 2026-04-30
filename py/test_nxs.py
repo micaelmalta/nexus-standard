@@ -97,6 +97,30 @@ def main() -> int:
     case("iteration visits every record", iter_count)
     case("iteration sum matches JSON sum", sum_matches)
 
+    # ── Security tests ───────────────────────────────────────────────────────
+    def bad_magic():
+        bad = bytearray(buf); bad[0] = 0x00
+        try: NxsReader(bytes(bad))
+        except NxsError as e:
+            assert "ERR_BAD_MAGIC" in e.args[0]; return
+        raise AssertionError("expected ERR_BAD_MAGIC")
+
+    def truncated():
+        try: NxsReader(buf[:16])
+        except NxsError: return
+        raise AssertionError("expected error on truncated file")
+
+    def dict_mismatch():
+        bad = bytearray(buf); bad[8] ^= 0xFF
+        try: NxsReader(bytes(bad))
+        except NxsError as e:
+            assert "ERR_DICT_MISMATCH" in e.args[0]; return
+        raise AssertionError("expected ERR_DICT_MISMATCH")
+
+    case("bad magic raises ERR_BAD_MAGIC", bad_magic)
+    case("truncated file raises NxsError", truncated)
+    case("corrupt DictHash raises ERR_DICT_MISMATCH", dict_mismatch)
+
     print(f"\n{passed} passed, {failed} failed\n")
     return 0 if failed == 0 else 1
 

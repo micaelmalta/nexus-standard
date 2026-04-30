@@ -67,8 +67,12 @@ func NewReader(data []byte) (*Reader, error) {
 
 	// Schema
 	if r.Flags&flagSchemaEmbedded != 0 {
-		if err := r.readSchema(32); err != nil {
+		schemaEnd, err := r.readSchema(32)
+		if err != nil {
 			return nil, err
+		}
+		if murmur3_64(data[32:schemaEnd]) != r.DictHash {
+			return nil, fmt.Errorf("ERR_DICT_MISMATCH: schema hash mismatch")
 		}
 	}
 
@@ -81,16 +85,16 @@ func NewReader(data []byte) (*Reader, error) {
 	return r, nil
 }
 
-func (r *Reader) readSchema(offset int) error {
+func (r *Reader) readSchema(offset int) (int, error) {
 	if offset+2 > len(r.data) {
-		return fmt.Errorf("ERR_OUT_OF_BOUNDS: schema header")
+		return 0, fmt.Errorf("ERR_OUT_OF_BOUNDS: schema header")
 	}
 	keyCount := int(binary.LittleEndian.Uint16(r.data[offset : offset+2]))
 	offset += 2
 
 	// TypeManifest
 	if offset+keyCount > len(r.data) {
-		return fmt.Errorf("ERR_OUT_OF_BOUNDS: type manifest")
+		return 0, fmt.Errorf("ERR_OUT_OF_BOUNDS: type manifest")
 	}
 	r.KeySigils = make([]byte, keyCount)
 	copy(r.KeySigils, r.data[offset:offset+keyCount])
@@ -105,14 +109,43 @@ func (r *Reader) readSchema(offset int) error {
 			offset++
 		}
 		if offset >= len(r.data) {
-			return fmt.Errorf("ERR_OUT_OF_BOUNDS: string pool")
+			return 0, fmt.Errorf("ERR_OUT_OF_BOUNDS: string pool")
 		}
 		k := string(r.data[start:offset])
 		r.Keys = append(r.Keys, k)
 		r.keyIndex[k] = i
 		offset++ // skip null terminator
 	}
-	return nil
+	// Pad to 8-byte boundary
+	if rem := offset % 8; rem != 0 {
+		offset += 8 - rem
+	}
+	return offset, nil
+}
+
+// murmur3_64 is the hash function used to compute and verify DictHash.
+func murmur3_64(data []byte) uint64 {
+	var h uint64 = 0x93681D6255313A99
+	for i := 0; i < len(data); i += 8 {
+		chunk := data[i:]
+		if len(chunk) > 8 {
+			chunk = chunk[:8]
+		}
+		var k uint64
+		for j, b := range chunk {
+			k |= uint64(b) << (j * 8)
+		}
+		k *= 0xFF51AFD7ED558CCD
+		k ^= k >> 33
+		h ^= k
+		h *= 0xC4CEB9FE1A85EC53
+		h ^= h >> 33
+	}
+	h ^= uint64(len(data))
+	h ^= h >> 33
+	h *= 0xFF51AFD7ED558CCD
+	h ^= h >> 33
+	return h
 }
 
 // RecordCount returns the total number of top-level records.

@@ -52,11 +52,17 @@ module Nxs
       @flags    = @data.unpack1("@6 S<")
       @tail_ptr = @data.unpack1("@16 Q<")
 
+      @dict_hash = @data.unpack1("@8 Q<")
+
       # Schema (when Flags bit 1 set)
       @keys       = []
       @key_sigils = []
       @key_index  = {}
-      read_schema(32) if @flags & FLAG_SCHEMA != 0
+      if @flags & FLAG_SCHEMA != 0
+        schema_end = read_schema(32)
+        computed = murmur3_64(@data[32...schema_end].bytes)
+        raise NxsError.new("ERR_DICT_MISMATCH", "schema hash mismatch") if computed != @dict_hash
+      end
 
       # Tail-index: u32 EntryCount followed by records
       @record_count = @data.unpack1("@#{@tail_ptr}L<")
@@ -202,6 +208,38 @@ module Nxs
         @key_index[@keys.last] = i
         pos = term + 1
       end
+      offset += pos
+
+      # Pad to 8-byte boundary
+      rem = offset % 8
+      offset += (8 - rem) % 8
+      offset
+    end
+
+    MURMUR_C1 = 0xFF51AFD7ED558CCD
+    MURMUR_C2 = 0xC4CEB9FE1A85EC53
+    MURMUR_MASK = 0xFFFFFFFFFFFFFFFF
+
+    def murmur3_64(bytes)
+      h = 0x93681D6255313A99
+      i = 0
+      len = bytes.length
+      while i < len
+        chunk = bytes[i, 8]
+        k = 0
+        chunk.each_with_index { |b, j| k |= b << (j * 8) }
+        k = (k * MURMUR_C1) & MURMUR_MASK
+        k ^= k >> 33
+        h ^= k
+        h = (h * MURMUR_C2) & MURMUR_MASK
+        h ^= h >> 33
+        i += 8
+      end
+      h ^= len
+      h ^= h >> 33
+      h = (h * MURMUR_C1) & MURMUR_MASK
+      h ^= h >> 33
+      h
     end
   end
 

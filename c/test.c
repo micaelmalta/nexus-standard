@@ -122,6 +122,36 @@ int main(int argc, char **argv) {
     }
 
     nxs_close(&r);
+
+    // ── Security tests ────────────────────────────────────────────────────────
+    {
+        uint8_t *bad = malloc(nxb_size);
+        memcpy(bad, nxb_data, nxb_size);
+        bad[0] = 0x00;
+        nxs_reader_t r2;
+        nxs_err_t e = nxs_open(&r2, bad, nxb_size);
+        CHECK("bad magic returns ERR_BAD_MAGIC", e == NXS_ERR_BAD_MAGIC);
+        free(bad);
+    }
+
+    {
+        uint8_t tiny[16] = {0x4E,0x58,0x53,0x42,0x00,0x01,0x00,0x00,
+                            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+        nxs_reader_t r2;
+        nxs_err_t e = nxs_open(&r2, tiny, sizeof(tiny));
+        CHECK("truncated file returns error", e != NXS_OK);
+    }
+
+    {
+        uint8_t *bad = malloc(nxb_size);
+        memcpy(bad, nxb_data, nxb_size);
+        bad[8] ^= 0xFF;
+        nxs_reader_t r2;
+        nxs_err_t e = nxs_open(&r2, bad, nxb_size);
+        CHECK("corrupt DictHash returns ERR_DICT_MISMATCH", e == NXS_ERR_DICT_MISMATCH);
+        free(bad);
+    }
+
     free(nxb_data);
 
     printf("\n%d passed, %d failed\n\n", passed, failed);

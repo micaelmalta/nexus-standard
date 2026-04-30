@@ -3,6 +3,7 @@ package nxs
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"os"
 	"path/filepath"
 	"testing"
@@ -171,6 +172,33 @@ func TestMinMaxF64(t *testing.T) {
 
 func closeEnough(a, b float64) bool {
 	return math.Abs(a-b) < 1e-6
+}
+
+func TestBadMagic(t *testing.T) {
+	nxb, _ := loadFixtures(t, 1000)
+	bad := append([]byte{}, nxb...)
+	bad[0] = 0x00
+	_, err := NewReader(bad)
+	if err == nil || !strings.Contains(err.Error(), "ERR_BAD_MAGIC") {
+		t.Errorf("expected ERR_BAD_MAGIC, got %v", err)
+	}
+}
+
+func TestTruncatedFile(t *testing.T) {
+	_, err := NewReader([]byte{0x4E, 0x58, 0x53, 0x42, 0x00, 0x01})
+	if err == nil {
+		t.Error("expected error on truncated file")
+	}
+}
+
+func TestDictHashMismatch(t *testing.T) {
+	nxb, _ := loadFixtures(t, 1000)
+	bad := append([]byte{}, nxb...)
+	bad[8] ^= 0xFF
+	_, err := NewReader(bad)
+	if err == nil || !strings.Contains(err.Error(), "ERR_DICT_MISMATCH") {
+		t.Errorf("expected ERR_DICT_MISMATCH, got %v", err)
+	}
 }
 
 func TestIsUniform(t *testing.T) {

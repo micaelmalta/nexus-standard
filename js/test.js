@@ -109,5 +109,30 @@ test("cursor.seek(k) reads same value as record(k)", () => {
   }
 });
 
+// ── Security tests ────────────────────────────────────────────────────────────
+
+test("bad magic throws ERR_BAD_MAGIC", () => {
+  const bad = new Uint8Array(buf.length);
+  bad.set(buf); bad[0] = 0x00;
+  let threw = false;
+  try { new NxsReader(bad); } catch (e) { threw = e.code === "ERR_BAD_MAGIC"; }
+  if (!threw) throw new Error("expected ERR_BAD_MAGIC");
+});
+
+test("truncated file throws ERR_OUT_OF_BOUNDS", () => {
+  const bad = buf.slice(0, 16);
+  let threw = false;
+  try { new NxsReader(bad); } catch (e) { threw = true; }
+  if (!threw) throw new Error("expected error on truncated file");
+});
+
+test("corrupt DictHash throws ERR_DICT_MISMATCH", () => {
+  const bad = new Uint8Array(buf.length);
+  bad.set(buf); bad[8] ^= 0xFF;
+  let threw = false;
+  try { new NxsReader(bad); } catch (e) { threw = e.code === "ERR_DICT_MISMATCH"; }
+  if (!threw) throw new Error("expected ERR_DICT_MISMATCH");
+});
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

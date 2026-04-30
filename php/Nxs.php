@@ -258,8 +258,9 @@ class Reader
 
         // ── Preamble ───────────────────────────────────────────────────────
         // Offset 4: version u16 (ignored)
-        $flags   = rdU16($bytes, 6);
-        $tailPtr = rdU64($bytes, 16);
+        $flags    = rdU16($bytes, 6);
+        $dictHash = rdU64($bytes, 8);
+        $tailPtr  = rdU64($bytes, 16);
 
         // ── Footer check ───────────────────────────────────────────────────
         $footer = rdU32($bytes, $len - 4);
@@ -269,7 +270,11 @@ class Reader
 
         // ── Schema (if embedded) ───────────────────────────────────────────
         if ($flags & FLAG_SCHEMA_EMBEDDED) {
-            $this->readSchema(32);
+            $schemaEnd = $this->readSchema(32);
+            $computed  = $this->murmur3_64(substr($bytes, 32, $schemaEnd - 32));
+            if ($computed !== $dictHash) {
+                throw new NxsException('ERR_DICT_MISMATCH: schema hash mismatch');
+            }
         }
 
         // ── Tail-index ─────────────────────────────────────────────────────
@@ -280,7 +285,7 @@ class Reader
 
     // ── Schema parser ──────────────────────────────────────────────────────
 
-    private function readSchema(int $offset): void
+    private function readSchema(int $offset): int
     {
         $bytes    = $this->bytes;
         $keyCount = rdU16($bytes, $offset);
@@ -296,10 +301,60 @@ class Reader
                 throw new NxsException('ERR_OUT_OF_BOUNDS: unterminated key in StringPool');
             }
             $name = substr($bytes, $offset, $end - $offset);
-            $this->keys[]         = $name;
+            $this->keys[]          = $name;
             $this->keyIndex[$name] = $i;
             $offset = $end + 1;
         }
+
+        // Pad to 8-byte boundary
+        $rem = $offset % 8;
+        if ($rem !== 0) {
+            $offset += 8 - $rem;
+        }
+        return $offset;
+    }
+
+    /**
+     * MurmurHash3-derived 64-bit hash matching the Rust reference implementation.
+     * PHP integers are 64-bit signed on 64-bit platforms; we use intval() after
+     * multiplication to keep values in the native int range (wrapping semantics).
+     */
+    private function murmur3_64(string $data): int
+    {
+        // PHP doesn't have unsigned 64-bit integers; use GMP for wrapping arithmetic.
+        $mask = gmp_init('0xFFFFFFFFFFFFFFFF');
+        $c1   = gmp_init('0xFF51AFD7ED558CCD');
+        $c2   = gmp_init('0xC4CEB9FE1A85EC53');
+        $h    = gmp_init('0x93681D6255313A99');
+
+        $len  = strlen($data);
+        $i    = 0;
+        while ($i < $len) {
+            $chunk = substr($data, $i, 8);
+            $k     = gmp_init(0);
+            for ($j = 0; $j < strlen($chunk); $j++) {
+                $k = gmp_or($k, gmp_mul(gmp_init(ord($chunk[$j])), gmp_pow(2, $j * 8)));
+            }
+            $k = gmp_and(gmp_mul($k, $c1), $mask);
+            $k = gmp_xor($k, gmp_div_q($k, gmp_pow(2, 33)));
+            $h = gmp_xor($h, $k);
+            $h = gmp_and(gmp_mul($h, $c2), $mask);
+            $h = gmp_xor($h, gmp_div_q($h, gmp_pow(2, 33)));
+            $i += 8;
+        }
+        $h = gmp_xor($h, gmp_init($len));
+        $h = gmp_xor($h, gmp_div_q($h, gmp_pow(2, 33)));
+        $h = gmp_and(gmp_mul($h, $c1), $mask);
+        $h = gmp_xor($h, gmp_div_q($h, gmp_pow(2, 33)));
+
+        // gmp_intval overflows for values > PHP_INT_MAX — use pack/unpack instead
+        // to reinterpret the 64-bit GMP value as a PHP signed int (same bit pattern
+        // as what rdU64 returns for the same bytes).
+        $hex = gmp_strval($h, 16);
+        $bytes = str_pad(hex2bin(str_pad($hex, 16, '0', STR_PAD_LEFT)), 8, "\x00", STR_PAD_LEFT);
+        // Reverse bytes to little-endian so unpack('q') reads it correctly
+        $result = unpack('q', strrev($bytes));
+        return $result[1];
     }
 
     // ── Public API ─────────────────────────────────────────────────────────
