@@ -34,10 +34,9 @@ func readListFromReader(reader: NXSReader, ri: Int, key: String) -> [Any]? {
 
     // Get abs offset of record ri
     if tailStart + ri * 10 + 10 > size { return nil }
-    let lo = UInt64(data[tailStart + ri*10 + 2]) | (UInt64(data[tailStart + ri*10 + 3]) << 8)
-        | (UInt64(data[tailStart + ri*10 + 4]) << 16) | (UInt64(data[tailStart + ri*10 + 5]) << 24)
-        | (UInt64(data[tailStart + ri*10 + 6]) << 32) | (UInt64(data[tailStart + ri*10 + 7]) << 40)
-        | (UInt64(data[tailStart + ri*10 + 8]) << 48) | (UInt64(data[tailStart + ri*10 + 9]) << 56)
+    let base = tailStart + ri * 10 + 2
+    var lo: UInt64 = 0
+    for b in 0..<8 { lo |= UInt64(data[base + b]) << (b * 8) }
     let abs = Int(lo)
 
     // Resolve slot offset

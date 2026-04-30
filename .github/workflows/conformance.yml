@@ -198,7 +198,7 @@ jobs:
 
       - name: Build and run C conformance runner
         run: |
-          cc -std=c99 -O2 -Ic/ c/nxs.c conformance/run_c.c -o /tmp/run_c -lm
+          cc -std=c99 -O2 -Ic/ c/nxs.c conformance/run_c.c -o /tmp/run_c -lm -Wno-format-truncation -Wno-unused-result
           /tmp/run_c conformance/
 
   run-swift:
@@ -255,11 +255,11 @@ jobs:
       - name: Compile and run Kotlin conformance runner
         run: |
           /tmp/kotlinc/bin/kotlinc \
-            -cp kotlin/build/libs/nxs-1.0.jar \
+            -cp kotlin/build/libs/nxs-1.0.0.jar \
             conformance/run_kotlin.kt \
             -include-runtime \
             -d /tmp/run_kotlin.jar
-          java -cp "/tmp/run_kotlin.jar:kotlin/build/libs/nxs-1.0.jar" conformance.MainKt ../conformance
+          java -cp "/tmp/run_kotlin.jar:kotlin/build/libs/nxs-1.0.0.jar" conformance.MainKt ../conformance
 
   run-csharp:
     needs: generate-vectors

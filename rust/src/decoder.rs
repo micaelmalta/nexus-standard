@@ -115,11 +115,20 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
             }
             let name = String::from_utf8_lossy(&data[start..pos]).to_string();
             keys.push(name);
+            if pos >= data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
             pos += 1; // skip null terminator
         }
-        // align to 8
+        // align to 8 — guard against pos already past end
+        if pos > data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
         while pos % 8 != 0 {
             pos += 1;
+        }
+        if pos > data.len() {
+            return Err(NxsError::OutOfBounds);
         }
         let schema_end = pos;
 

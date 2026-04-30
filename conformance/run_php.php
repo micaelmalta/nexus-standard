@@ -6,7 +6,7 @@
 declare(strict_types=1);
 
 // Load the NXS reader
-require_once __DIR__ . '/../php/nxs.php';
+require_once __DIR__ . '/../php/Nxs.php';
 
 use Nxs\Reader as NxsReader;
 use Nxs\NxsException;
