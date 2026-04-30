@@ -6,7 +6,7 @@ rust/target
 js/fixtures/
 
 # Python build artifacts
-py/_nxs.c
+# _nxs.c is hand-written source — committed; only the compiled .so is excluded
 py/_nxs.cpython-*.so
 py/__pycache__/
 js/__pycache__/
