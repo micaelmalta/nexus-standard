@@ -125,6 +125,24 @@ The `StringPool` **MUST** be padded to an 8-byte boundary after the last null te
 
 ---
 
+### 4.3 Schema Evolution
+
+NXS uses an **additive-only** schema evolution model. Writers may add new fields to the schema at any time. Existing readers that were compiled against an older schema with fewer fields will continue to work correctly without modification.
+
+**How it works:**
+
+When a reader accesses a field by key name or slot index, it checks the per-object bitmask to determine whether that field is present. If the bit for a requested slot is `0` (absent) or the slot index is beyond the bitmask range, the reader MUST return the language-appropriate "absent" sentinel (e.g., `null`, `None`, `undefined`, `(zero, false)`) rather than raising an error.
+
+**Rules:**
+1. Writers MAY add new keys to the end of the schema. Existing slot indices are unchanged.
+2. Writers MUST NOT reorder or remove keys from an existing schema.
+3. Readers MUST treat a missing bitmask bit (field not present in this record) as absent, not as an error.
+4. A file written with an N-field schema is readable by any reader that knows about slots `0` through `M` (M ≤ N); fields `M+1` through `N-1` will simply appear absent.
+
+**Example:** A file written with schema `["a", "b", "c"]` can be read by a reader that only queries `"a"` and `"b"`. Field `"c"` will be absent for that reader — no error is raised, and no schema version negotiation is required.
+
+---
+
 ## 5. Object Anatomy
 Objects are the primary data container. To support sparse data (missing fields) without wasting space, objects use a **Bitmask + Offset Table** approach.
 

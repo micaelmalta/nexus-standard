@@ -123,7 +123,40 @@ cd rust && cargo run --bin bench --release
 
 ### Install
 
-No package manager required — `nxs.js` is a single ES module file.
+No package manager required — `nxs.js` and `nxs_writer.js` are single ES module files.
+
+### Write `.nxb` directly (slot-based hot path)
+
+```js
+import { NxsSchema, NxsWriter } from "./nxs_writer.js";
+
+// Precompile schema once — reuse across all writer instances.
+const schema = new NxsSchema(["id", "username", "score", "active"]);
+const w = new NxsWriter(schema);
+
+for (const r of records) {
+    w.beginObject();
+    w.writeI64(0, BigInt(r.id));   // slot index; i64 takes a BigInt
+    w.writeStr(1, r.username);
+    w.writeF64(2, r.score);
+    w.writeBool(3, r.active);
+    w.endObject();
+}
+const bytes = w.finish(); // Uint8Array — valid .nxb file
+```
+
+### Write `.nxb` — convenience wrapper
+
+```js
+// Dict-based convenience: resolves key → slot automatically.
+const bytes = NxsWriter.fromRecords(
+    ["id", "username", "score"],
+    [
+        { id: 1n, username: "alice", score: 9.5 },
+        { id: 2n, username: "bob",   score: 7.2 },
+    ]
+);
+```
 
 ### Read `.nxb`
 
@@ -225,6 +258,39 @@ cd js && python3 server.py   # needed for SharedArrayBuffer (COOP/COEP headers)
 
 ## Python
 
+### Write `.nxb` directly (slot-based hot path)
+
+```python
+from nxs_writer import NxsSchema, NxsWriter
+
+# Precompile schema once — reuse across all writer instances.
+schema = NxsSchema(["id", "username", "score", "active"])
+w = NxsWriter(schema)
+
+for r in records:
+    w.begin_object()
+    w.write_i64(0, r["id"])
+    w.write_str(1, r["username"])
+    w.write_f64(2, r["score"])
+    w.write_bool(3, r["active"])
+    w.end_object()
+
+data: bytes = w.finish()  # valid .nxb file
+```
+
+### Write `.nxb` — convenience wrapper
+
+```python
+# Dict-based convenience: resolves key → slot automatically.
+data = NxsWriter.from_records(
+    ["id", "username", "score"],
+    [
+        {"id": 1, "username": "alice", "score": 9.5},
+        {"id": 2, "username": "bob",   "score": 7.2},
+    ]
+)
+```
+
 ### Pure-Python reader
 
 ```python
@@ -277,6 +343,39 @@ python bench_c.py           # C extension vs json
 ---
 
 ## Go
+
+### Write `.nxb` directly (slot-based hot path)
+
+```go
+import "github.com/micaelmalta/nxs/go"
+
+// Precompile schema once — reuse across all writer instances.
+schema := nxs.NewSchema([]string{"id", "username", "score", "active"})
+w := nxs.NewWriter(schema)
+
+for _, r := range records {
+    w.BeginObject()
+    w.WriteI64(0, r.ID)
+    w.WriteStr(1, r.Username)
+    w.WriteF64(2, r.Score)
+    w.WriteBool(3, r.Active)
+    w.EndObject()
+}
+data := w.Finish() // []byte — valid .nxb file
+```
+
+### Write `.nxb` — convenience function
+
+```go
+// Map-based convenience: resolves key → slot automatically.
+data := nxs.FromRecords(
+    []string{"id", "username", "score"},
+    []map[string]interface{}{
+        {"id": int64(1), "username": "alice", "score": 9.5},
+        {"id": int64(2), "username": "bob",   "score": 7.2},
+    },
+)
+```
 
 ### Read `.nxb`
 

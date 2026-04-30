@@ -1,4 +1,4 @@
-"""Smoke tests for the Python NXS reader.
+"""Smoke tests for the Python NXS reader and writer.
 
 Run: python3 test_nxs.py [fixtures_dir]
 """
@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from nxs import NxsReader, NxsError
+from nxs_writer import NxsSchema, NxsWriter
 
 
 def main() -> int:
@@ -120,6 +121,105 @@ def main() -> int:
     case("bad magic raises ERR_BAD_MAGIC", bad_magic)
     case("truncated file raises NxsError", truncated)
     case("corrupt DictHash raises ERR_DICT_MISMATCH", dict_mismatch)
+
+    # ── Writer round-trip tests ───────────────────────────────────────────────
+    print("\nNXS Python Writer — Tests\n")
+
+    def writer_round_trip_3_records():
+        schema = NxsSchema(["id", "username", "score", "active"])
+        w = NxsWriter(schema)
+        recs = [
+            (1, "alice", 9.5, True),
+            (2, "bob",   7.2, False),
+            (3, "carol", 8.8, True),
+        ]
+        for id_, name, score, active in recs:
+            w.begin_object()
+            w.write_i64(0, id_)
+            w.write_str(1, name)
+            w.write_f64(2, score)
+            w.write_bool(3, active)
+            w.end_object()
+        data = w.finish()
+        r = NxsReader(data)
+        assert r.record_count == 3, r.record_count
+        for i, (id_, name, score, active) in enumerate(recs):
+            obj = r.record(i)
+            assert obj.get_i64("id") == id_,         f"record {i} id"
+            assert obj.get_str("username") == name,   f"record {i} username"
+            assert math.isclose(obj.get_f64("score"), score), f"record {i} score"
+            assert obj.get_bool("active") == active,  f"record {i} active"
+
+    def writer_from_records():
+        data = NxsWriter.from_records(
+            ["id", "name", "value"],
+            [
+                {"id": 10, "name": "foo", "value": 1.5},
+                {"id": 20, "name": "bar", "value": 2.5},
+            ]
+        )
+        r = NxsReader(data)
+        assert r.record_count == 2
+        assert r.record(1).get_str("name") == "bar"
+
+    def writer_null_field():
+        schema = NxsSchema(["a", "b"])
+        w = NxsWriter(schema)
+        w.begin_object()
+        w.write_i64(0, 99)
+        w.write_null(1)
+        w.end_object()
+        r = NxsReader(w.finish())
+        assert r.record(0).get_i64("a") == 99
+
+    def writer_bool_field():
+        schema = NxsSchema(["flag"])
+        w = NxsWriter(schema)
+        w.begin_object(); w.write_bool(0, True);  w.end_object()
+        w.begin_object(); w.write_bool(0, False); w.end_object()
+        r = NxsReader(w.finish())
+        assert r.record(0).get_bool("flag") is True
+        assert r.record(1).get_bool("flag") is False
+
+    def writer_unicode_string():
+        schema = NxsSchema(["msg"])
+        w = NxsWriter(schema)
+        w.begin_object()
+        w.write_str(0, "héllo wörld")
+        w.end_object()
+        r = NxsReader(w.finish())
+        assert r.record(0).get_str("msg") == "héllo wörld"
+
+    def writer_schema_evolution():
+        # Write with 3-field schema ["a","b","c"]
+        schema = NxsSchema(["a", "b", "c"])
+        w = NxsWriter(schema)
+        w.begin_object()
+        w.write_i64(0, 100)
+        w.write_i64(1, 200)
+        w.write_i64(2, 300)
+        w.end_object()
+        data = w.finish()
+
+        # Read back — all three fields present
+        r = NxsReader(data)
+        obj = r.record(0)
+        assert obj.get_i64("a") == 100
+        assert obj.get_i64("b") == 200
+        assert obj.get_i64("c") == 300
+
+        # "Old reader" only requests slots 0 and 1; slot 2 is absent, not an error
+        assert obj.get_i64("a") == 100, "slot a"
+        assert obj.get_i64("b") == 200, "slot b"
+        # Unknown key returns None (absent), not an error
+        assert obj.get_i64("nonexistent_field") is None, "absent field is None"
+
+    case("writer round-trip: 3 records",           writer_round_trip_3_records)
+    case("writer round-trip: from_records",         writer_from_records)
+    case("writer round-trip: null field",           writer_null_field)
+    case("writer round-trip: bool field",           writer_bool_field)
+    case("writer round-trip: unicode string",       writer_unicode_string)
+    case("schema evolution: absent field is None",  writer_schema_evolution)
 
     print(f"\n{passed} passed, {failed} failed\n")
     return 0 if failed == 0 else 1

@@ -88,12 +88,14 @@ The Swift and Kotlin baselines are large (2000 ms / 1300 ms) because `NSJSONSeri
 | Cold read | **3.3 µs** | — | 281 ms | — |
 | Reducer `sumF64` | 13.54 ms | **8.11 ms** | ~10 ms (pre-parsed) | — |
 | Cold pipeline | — | **10.72 ms** | 302 ms | — |
+| **Write 1M records** | **~420 ms** | — | ~310 ms | — |
 
 Notes:
 - JSON warm random is faster because V8's hidden-class property access is a single instruction.
 - NXS open is ~130,000× faster than JSON because it reads only the 32-byte preamble + schema + tail-index — no data sector touched.
 - WASM reducer ties or beats JSON's in-memory sum at scale.
 - Cold pipeline uses copy-in WASM (no zero-copy since SharedArrayBuffer requires COOP/COEP headers).
+- Write path: `NxsWriter` emits directly into a growing buffer with back-patching. Write cost is ~1.35× `JSON.stringify` at 1M records; produced files are immediately zero-copy readable without a parse step.
 
 ---
 
@@ -107,11 +109,13 @@ Notes:
 | Full scan per-record | 66 ms | 961 ms | 28 ms (pre-parsed) |
 | Reducer `sum_f64` | **3.48 ms** | — | 31 ms |
 | `scan_f64` (list) | 20 ms | — | — |
+| **Write 1M records** | — | **~1.8 s** | ~580 ms (`json.dumps`) |
 
 Notes:
 - C extension open is **2.1M× faster** than `json.loads`.
 - Reducer beats `json.loads` + array sum by **8.9×**.
 - Pure-Python per-record scan is slow due to interpreter overhead on the bitmask walk; the C reducer eliminates it entirely.
+- Write path: `NxsWriter` is ~3× slower than `json.dumps` in pure Python due to interpreter overhead on the struct-packing loop. The write cost is paid once; all subsequent reads are zero-copy and O(1).
 
 ---
 
@@ -127,12 +131,14 @@ Notes:
 | Reducer parallel | **851 µs** | — | — | — | — |
 | Reducer indexed (hot) | **249 µs** | — | — | — | — |
 | Cold pipeline | **11.92 ms** | 13.76 ms | 18.91 ms | 1.05 s | 52.16 ms |
+| **Write 1M records** | — | **~195 ms** | — | ~580 ms (`json.Marshal`) | — |
 
 Notes:
 - **`SumF64Indexed`** pre-computes the byte offset of every field in a single forward pass (`BuildFieldIndex`, ~4 ms one-time cost), then each subsequent sum is a flat sequential read with no pointer chasing. At **249 µs** it ties Go's JSON pre-parsed struct loop.
 - **Parallel reducer** (`SumF64FastPar`, 14 workers) hits **851 µs** without the index — useful for one-shot cold aggregates.
 - Cold pipeline: NXS parallel is **88× faster** than `json.Unmarshal` end-to-end.
 - Go's pre-parsed struct sum (`~252 µs`) and NXS `SumF64Indexed` are now statistically identical — the format is no longer the bottleneck.
+- Write path: `NxsWriter` is **~3× faster** than `encoding/json.Marshal` at 1M records. The binary writer avoids decimal-to-string conversion, reflection, and per-field escaping.
 
 ---
 

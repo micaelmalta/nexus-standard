@@ -201,6 +201,182 @@ func TestDictHashMismatch(t *testing.T) {
 	}
 }
 
+// ── Writer tests ──────────────────────────────────────────────────────────────
+
+func TestWriterRoundTrip(t *testing.T) {
+	type rec struct {
+		id       int64
+		username string
+		score    float64
+		active   bool
+	}
+	recs := []rec{
+		{1, "alice", 9.5, true},
+		{2, "bob", 7.2, false},
+		{3, "carol", 8.8, true},
+	}
+
+	schema := NewSchema([]string{"id", "username", "score", "active"})
+	w := NewWriter(schema)
+	for _, r := range recs {
+		w.BeginObject()
+		w.WriteI64(0, r.id)
+		w.WriteStr(1, r.username)
+		w.WriteF64(2, r.score)
+		w.WriteBool(3, r.active)
+		w.EndObject()
+	}
+	data := w.Finish()
+
+	rd, err := NewReader(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rd.RecordCount() != len(recs) {
+		t.Fatalf("record count = %d, want %d", rd.RecordCount(), len(recs))
+	}
+	for i, want := range recs {
+		obj := rd.Record(i)
+		if got, ok := obj.GetI64("id"); !ok || got != want.id {
+			t.Errorf("record %d id = %v (ok=%v), want %v", i, got, ok, want.id)
+		}
+		if got, ok := obj.GetStr("username"); !ok || got != want.username {
+			t.Errorf("record %d username = %q (ok=%v), want %q", i, got, ok, want.username)
+		}
+		if got, ok := obj.GetF64("score"); !ok || !closeEnough(got, want.score) {
+			t.Errorf("record %d score = %v (ok=%v), want %v", i, got, ok, want.score)
+		}
+		if got, ok := obj.GetBool("active"); !ok || got != want.active {
+			t.Errorf("record %d active = %v (ok=%v), want %v", i, got, ok, want.active)
+		}
+	}
+}
+
+func TestWriterFromRecords(t *testing.T) {
+	keys := []string{"id", "name", "value"}
+	records := []map[string]interface{}{
+		{"id": int64(10), "name": "foo", "value": 1.5},
+		{"id": int64(20), "name": "bar", "value": 2.5},
+	}
+	data := FromRecords(keys, records)
+	r, err := NewReader(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.RecordCount() != 2 {
+		t.Fatalf("record count = %d, want 2", r.RecordCount())
+	}
+	name, ok := r.Record(1).GetStr("name")
+	if !ok || name != "bar" {
+		t.Errorf("record 1 name = %q (ok=%v), want \"bar\"", name, ok)
+	}
+}
+
+func TestWriterNullField(t *testing.T) {
+	schema := NewSchema([]string{"a", "b"})
+	w := NewWriter(schema)
+	w.BeginObject()
+	w.WriteI64(0, 99)
+	w.WriteNull(1)
+	w.EndObject()
+	r, err := NewReader(w.Finish())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := r.Record(0).GetI64("a")
+	if !ok || got != 99 {
+		t.Errorf("a = %v (ok=%v), want 99", got, ok)
+	}
+}
+
+func TestWriterBoolField(t *testing.T) {
+	schema := NewSchema([]string{"flag"})
+	w := NewWriter(schema)
+	w.BeginObject(); w.WriteBool(0, true);  w.EndObject()
+	w.BeginObject(); w.WriteBool(0, false); w.EndObject()
+	r, err := NewReader(w.Finish())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := r.Record(0).GetBool("flag"); !ok || !v {
+		t.Errorf("record 0 flag = %v (ok=%v), want true", v, ok)
+	}
+	if v, ok := r.Record(1).GetBool("flag"); !ok || v {
+		t.Errorf("record 1 flag = %v (ok=%v), want false", v, ok)
+	}
+}
+
+func TestWriterUnicodeString(t *testing.T) {
+	schema := NewSchema([]string{"msg"})
+	w := NewWriter(schema)
+	w.BeginObject()
+	w.WriteStr(0, "héllo wörld")
+	w.EndObject()
+	r, err := NewReader(w.Finish())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := r.Record(0).GetStr("msg")
+	if !ok || got != "héllo wörld" {
+		t.Errorf("msg = %q (ok=%v), want \"héllo wörld\"", got, ok)
+	}
+}
+
+func TestWriterSchemaEvolution(t *testing.T) {
+	// Write with schema ["a","b","c"]
+	schema := NewSchema([]string{"a", "b", "c"})
+	w := NewWriter(schema)
+	w.BeginObject()
+	w.WriteI64(0, 100)
+	w.WriteI64(1, 200)
+	w.WriteI64(2, 300)
+	w.EndObject()
+	data := w.Finish()
+
+	// Full reader — all three fields present
+	r, err := NewReader(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj := r.Record(0)
+	if v, ok := obj.GetI64("a"); !ok || v != 100 {
+		t.Errorf("a = %v (ok=%v), want 100", v, ok)
+	}
+	if v, ok := obj.GetI64("b"); !ok || v != 200 {
+		t.Errorf("b = %v (ok=%v), want 200", v, ok)
+	}
+	if v, ok := obj.GetI64("c"); !ok || v != 300 {
+		t.Errorf("c = %v (ok=%v), want 300", v, ok)
+	}
+
+	// Simulate old reader: unknown key returns (zero, false) — absent, not an error
+	if _, ok := obj.GetI64("nonexistent_field"); ok {
+		t.Error("expected absent (false) for unknown key, got present")
+	}
+}
+
+func TestWriterManyFields(t *testing.T) {
+	// Test LEB128 bitmask with more than 7 fields (requires 2+ bitmask bytes)
+	keys := []string{"f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"}
+	schema := NewSchema(keys)
+	w := NewWriter(schema)
+	w.BeginObject()
+	for i, _ := range keys {
+		w.WriteI64(i, int64(i*100))
+	}
+	w.EndObject()
+	r, err := NewReader(w.Finish())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, k := range keys {
+		got, ok := r.Record(0).GetI64(k)
+		if !ok || got != int64(i*100) {
+			t.Errorf("field %s = %v (ok=%v), want %d", k, got, ok, i*100)
+		}
+	}
+}
+
 func TestIsUniform(t *testing.T) {
 	nxb, _ := loadFixtures(t, 1000)
 	r, err := NewReader(nxb)
