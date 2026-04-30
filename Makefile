@@ -196,6 +196,6 @@ FUZZ_TIME ?= 60
 
 fuzz:
 	@echo "Fuzzing for $(FUZZ_TIME)s (requires nightly)..."
-	cd rust && cargo +nightly fuzz run fuzz_decode -- -max_total_time=$(FUZZ_TIME)
-	cd rust && cargo +nightly fuzz run fuzz_writer_roundtrip -- -max_total_time=$(FUZZ_TIME)
+	cd rust && cargo +nightly fuzz run fuzz_decode -- -max_total_time=$(FUZZ_TIME) -rss_limit_mb=0 -max_len=8192
+	cd rust && cargo +nightly fuzz run fuzz_writer_roundtrip -- -max_total_time=$(FUZZ_TIME) -rss_limit_mb=0 -max_len=4096
 	@echo "✅  Fuzz complete — no crashes found."

@@ -93,24 +93,29 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
     let mut keys: Vec<String> = Vec::new();
     let mut key_sigils: Vec<u8> = Vec::new();
 
-    if schema_embedded && pos < data.len() {
+    if schema_embedded && pos + 2 <= data.len() {
         let schema_start = pos;
         let key_count = u16::from_le_bytes(
             data[pos..pos + 2]
                 .try_into()
                 .map_err(|_| NxsError::OutOfBounds)?,
         ) as usize;
+        if key_count > 256 {
+            return Err(NxsError::OutOfBounds); // spec max is 256 keys
+        }
         pos += 2;
         // TypeManifest
-        if pos + key_count > data.len() {
+        let end = pos.checked_add(key_count).ok_or(NxsError::OutOfBounds)?;
+        if end > data.len() {
             return Err(NxsError::OutOfBounds);
         }
-        key_sigils = data[pos..pos + key_count].to_vec();
-        pos += key_count;
-        // StringPool
+        key_sigils = data[pos..end].to_vec();
+        pos = end;
+        // StringPool — cap key name length to prevent OOM
         for _ in 0..key_count {
             let start = pos;
             while pos < data.len() && data[pos] != 0 {
+                if pos - start > 256 { return Err(NxsError::OutOfBounds); }
                 pos += 1;
             }
             let name = String::from_utf8_lossy(&data[start..pos]).to_string();
@@ -217,10 +222,13 @@ fn decode_object(
     ) as usize;
     pos += 4;
 
-    // Read LEB128 bitmask
+    // Read LEB128 bitmask — cap at 512 bits (74 bytes) to prevent OOM
     let mut present_bits: Vec<bool> = Vec::new();
     loop {
         if pos >= data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        if present_bits.len() >= 512 {
             return Err(NxsError::OutOfBounds);
         }
         let byte = data[pos];
@@ -233,8 +241,11 @@ fn decode_object(
         }
     }
 
-    // Count present fields
+    // Count present fields — cap to prevent OOM from malformed inputs
     let present_count = present_bits.iter().filter(|&&b| b).count();
+    if present_count > 512 {
+        return Err(NxsError::OutOfBounds);
+    }
 
     // Read offset table (u16 each)
     let mut offsets: Vec<usize> = Vec::new();
