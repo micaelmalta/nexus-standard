@@ -1,9 +1,7 @@
 name: Publish C Release
 
 on:
-  push:
-    tags: ['v*']
-
+  workflow_dispatch:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest

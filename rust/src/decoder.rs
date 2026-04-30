@@ -123,14 +123,14 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
         Vec::new()
     };
 
-    // Read tail-index for record count
-    let tail_offset = tail_ptr as usize;
-    let record_count = if tail_offset + 4 <= data.len() {
+    // Read tail-index for record count — guard against overflow from large tail_ptr values.
+    let tail_offset = if tail_ptr as usize as u64 == tail_ptr { tail_ptr as usize } else { return Err(NxsError::OutOfBounds) };
+    let record_count = if tail_offset.saturating_add(4) <= data.len() {
         u32::from_le_bytes(data[tail_offset..tail_offset+4].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize
     } else {
         0
     };
-    let tail_start = tail_offset + 4;
+    let tail_start = tail_offset.saturating_add(4);
 
     Ok(DecodedFile {
         version,

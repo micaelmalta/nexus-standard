@@ -1,9 +1,7 @@
 name: Publish Kotlin (Maven Central)
 
 on:
-  push:
-    tags: ['v*']
-
+  workflow_dispatch:
 jobs:
   test:
     uses: ./.github/workflows/fixtures.yml
