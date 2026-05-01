@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexus-standard"
-version = "1.0.0"
+version = "1.0.1"
 description = "Zero-copy reader for the Nexus Standard (NXS) binary format"
 readme = "README.md"
 license = { text = "MIT" }
@@ -34,4 +34,4 @@ Documentation = "https://github.com/micaelmalta/nexus-standard/blob/main/SPEC.md
 py-modules = ["nxs", "nxs_writer"]
 
 [tool.setuptools.package-data]
-"*" = ["*.pyi"]
+"" = ["*.pyi"]
