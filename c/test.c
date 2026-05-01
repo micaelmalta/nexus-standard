@@ -1,10 +1,11 @@
-// NXS C reader smoke tests
-// Build: cc -std=c99 -O2 -o test test.c nxs.c -lm && ./test ../js/fixtures
+// NXS C reader + writer smoke tests
+// Build: cc -std=c99 -O2 -o test test.c nxs.c nxs_writer.c -lm && ./test ../js/fixtures
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "nxs.h"
+#include "nxs_writer.h"
 
 // Minimal JSON parser for the fixture — just enough to validate numbers/strings.
 // We read the JSON ourselves rather than pulling in a library.
@@ -153,6 +154,133 @@ int main(int argc, char **argv) {
     }
 
     free(nxb_data);
+
+    // ── Writer round-trip tests ───────────────────────────────────────────────
+    printf("\nNXS C Writer — Round-trip Tests\n\n");
+
+    // 3-record round-trip
+    {
+        const char *keys[] = {"id", "username", "score", "active"};
+        nxs_writer_t w;
+        nxs_writer_init(&w, keys, 4, 1024);
+
+        struct { int64_t id; const char *name; double score; int active; }
+            recs[] = {{1,"alice",9.5,1},{2,"bob",7.2,0},{3,"carol",8.8,1}};
+
+        for (int i = 0; i < 3; i++) {
+            nxs_writer_begin_object(&w);
+            nxs_write_i64 (&w, 0, recs[i].id);
+            nxs_write_str (&w, 1, recs[i].name, (uint32_t)strlen(recs[i].name));
+            nxs_write_f64 (&w, 2, recs[i].score);
+            nxs_write_bool(&w, 3, recs[i].active);
+            nxs_writer_end_object(&w);
+        }
+        nxs_writer_finish(&w);
+
+        nxs_reader_t rr;
+        nxs_err_t e = nxs_open(&rr, w.out, w.out_size);
+        CHECK("writer round-trip: opens without error", e == NXS_OK);
+        CHECK("writer round-trip: record count == 3", rr.record_count == 3);
+
+        nxs_object_t obj;
+        nxs_record(&rr, 0, &obj);
+        int64_t id0 = 0; nxs_get_i64(&obj, "id", &id0);
+        CHECK("writer round-trip: record(0) id == 1", id0 == 1);
+
+        nxs_record(&rr, 1, &obj);
+        char uname[64] = {0}; nxs_get_str(&obj, "username", uname, sizeof(uname));
+        CHECK("writer round-trip: record(1) username == bob", strcmp(uname, "bob") == 0);
+
+        nxs_record(&rr, 2, &obj);
+        double sc = 0; nxs_get_f64(&obj, "score", &sc);
+        CHECK("writer round-trip: record(2) score ~= 8.8", fabs(sc - 8.8) < 1e-9);
+
+        nxs_record(&rr, 0, &obj);
+        int act = -1; nxs_get_bool(&obj, "active", &act);
+        CHECK("writer round-trip: record(0) active == 1", act == 1);
+
+        nxs_record(&rr, 1, &obj);
+        act = -1; nxs_get_bool(&obj, "active", &act);
+        CHECK("writer round-trip: record(1) active == 0", act == 0);
+
+        nxs_writer_free(&w);
+    }
+
+    // null field
+    {
+        const char *keys[] = {"a", "b"};
+        nxs_writer_t w;
+        nxs_writer_init(&w, keys, 2, 256);
+        nxs_writer_begin_object(&w);
+        nxs_write_i64 (&w, 0, 99);
+        nxs_write_null(&w, 1);
+        nxs_writer_end_object(&w);
+        nxs_writer_finish(&w);
+
+        nxs_reader_t rr; nxs_open(&rr, w.out, w.out_size);
+        nxs_object_t obj; nxs_record(&rr, 0, &obj);
+        int64_t av = 0; nxs_get_i64(&obj, "a", &av);
+        CHECK("writer null field: a == 99", av == 99);
+        nxs_writer_free(&w);
+    }
+
+    // bool fields
+    {
+        const char *keys[] = {"flag"};
+        nxs_writer_t w;
+        nxs_writer_init(&w, keys, 1, 256);
+        nxs_writer_begin_object(&w); nxs_write_bool(&w, 0, 1); nxs_writer_end_object(&w);
+        nxs_writer_begin_object(&w); nxs_write_bool(&w, 0, 0); nxs_writer_end_object(&w);
+        nxs_writer_finish(&w);
+
+        nxs_reader_t rr; nxs_open(&rr, w.out, w.out_size);
+        nxs_object_t obj;
+        int b0 = -1, b1 = -1;
+        nxs_record(&rr, 0, &obj); nxs_get_bool(&obj, "flag", &b0);
+        nxs_record(&rr, 1, &obj); nxs_get_bool(&obj, "flag", &b1);
+        CHECK("writer bool: record(0) == 1", b0 == 1);
+        CHECK("writer bool: record(1) == 0", b1 == 0);
+        nxs_writer_free(&w);
+    }
+
+    // unicode string
+    {
+        const char *keys[] = {"msg"};
+        nxs_writer_t w;
+        nxs_writer_init(&w, keys, 1, 256);
+        const char *s = "h\xC3\xA9llo w\xC3\xB6rld"; // héllo wörld UTF-8
+        nxs_writer_begin_object(&w);
+        nxs_write_str(&w, 0, s, (uint32_t)strlen(s));
+        nxs_writer_end_object(&w);
+        nxs_writer_finish(&w);
+
+        nxs_reader_t rr; nxs_open(&rr, w.out, w.out_size);
+        nxs_object_t obj; nxs_record(&rr, 0, &obj);
+        char buf[64] = {0}; nxs_get_str(&obj, "msg", buf, sizeof(buf));
+        CHECK("writer unicode string round-trip", strcmp(buf, s) == 0);
+        nxs_writer_free(&w);
+    }
+
+    // many fields — multi-byte bitmask (9 fields, needs 2 bitmask bytes)
+    {
+        const char *keys[] = {"f0","f1","f2","f3","f4","f5","f6","f7","f8"};
+        nxs_writer_t w;
+        nxs_writer_init(&w, keys, 9, 512);
+        nxs_writer_begin_object(&w);
+        for (int i = 0; i < 9; i++) nxs_write_i64(&w, i, (int64_t)(i * 100));
+        nxs_writer_end_object(&w);
+        nxs_writer_finish(&w);
+
+        nxs_reader_t rr; nxs_open(&rr, w.out, w.out_size);
+        nxs_object_t obj; nxs_record(&rr, 0, &obj);
+        int all_ok = 1;
+        for (int i = 0; i < 9; i++) {
+            int64_t v = 0; nxs_get_i64(&obj, keys[i], &v);
+            if (v != (int64_t)(i * 100)) { all_ok = 0; break; }
+        }
+        CHECK("writer many fields (multi-byte bitmask)", all_ok);
+        nxs_writer_free(&w);
+    }
 
     printf("\n%d passed, %d failed\n\n", passed, failed);
     return failed > 0 ? 1 : 0;

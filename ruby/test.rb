@@ -134,6 +134,93 @@ puts
   end
 ].each { |r| r ? (passes += 1) : (fails += 1) }
 
+# ── Writer round-trip tests ─────────────────────────────────────────────────
+require_relative 'nxs_writer'
+
+puts
+puts 'NXS Ruby Writer — Round-trip Tests'
+puts '━' * 60
+puts
+
+[
+  check('writer round-trip: 3 records') do
+    schema = Nxs::Schema.new(%w[id username score active])
+    w = Nxs::Writer.new(schema)
+    recs = [[1, 'alice', 9.5, true], [2, 'bob', 7.2, false], [3, 'carol', 8.8, true]]
+    recs.each do |(id, name, score, active)|
+      w.begin_object
+      w.write_i64(0, id)
+      w.write_str(1, name)
+      w.write_f64(2, score)
+      w.write_bool(3, active)
+      w.end_object
+    end
+    r = Nxs::Reader.new(w.finish)
+    r.record_count == 3 &&
+      r.record(0).get_i64('id') == 1 &&
+      r.record(1).get_str('username') == 'bob' &&
+      (r.record(2).get_f64('score') - 8.8).abs < 1e-9 &&
+      r.record(0).get_bool('active') == true &&
+      r.record(1).get_bool('active') == false
+  end,
+
+  check('writer from_records convenience') do
+    data = Nxs::Writer.from_records(
+      %w[id name value],
+      [{ 'id' => 10, 'name' => 'foo', 'value' => 1.5 },
+       { 'id' => 20, 'name' => 'bar', 'value' => 2.5 }]
+    )
+    r = Nxs::Reader.new(data)
+    r.record_count == 2 && r.record(1).get_str('name') == 'bar'
+  end,
+
+  check('writer null field') do
+    schema = Nxs::Schema.new(%w[a b])
+    w = Nxs::Writer.new(schema)
+    w.begin_object
+    w.write_i64(0, 99)
+    w.write_null(1)
+    w.end_object
+    r = Nxs::Reader.new(w.finish)
+    r.record(0).get_i64('a') == 99
+  end,
+
+  check('writer bool fields') do
+    schema = Nxs::Schema.new(['flag'])
+    w = Nxs::Writer.new(schema)
+    w.begin_object
+    w.write_bool(0, true)
+    w.end_object
+    w.begin_object
+    w.write_bool(0, false)
+    w.end_object
+    r = Nxs::Reader.new(w.finish)
+    r.record(0).get_bool('flag') == true && r.record(1).get_bool('flag') == false
+  end,
+
+  check('writer unicode string') do
+    schema = Nxs::Schema.new(['msg'])
+    w = Nxs::Writer.new(schema)
+    w.begin_object
+    w.write_str(0, 'héllo wörld')
+    w.end_object
+    r = Nxs::Reader.new(w.finish)
+    r.record(0).get_str('msg') == 'héllo wörld'
+  end,
+
+  check('writer many fields (>7, multi-byte bitmask)') do
+    keys = (0..8).map { |i| "f#{i}" }
+    schema = Nxs::Schema.new(keys)
+    w = Nxs::Writer.new(schema)
+    w.begin_object
+    keys.each_with_index { |_, i| w.write_i64(i, i * 100) }
+    w.end_object
+    r = Nxs::Reader.new(w.finish)
+    keys.each_with_index.all? { |k, i| r.record(0).get_i64(k) == i * 100 }
+  end
+
+].each { |r| r ? (passes += 1) : (fails += 1) }
+
 # ── Security tests ──────────────────────────────────────────────────────────
 [
   check('bad magic raises ERR_BAD_MAGIC') do

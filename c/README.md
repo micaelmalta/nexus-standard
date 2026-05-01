@@ -1,6 +1,6 @@
-# NXS — C Reader
+# NXS — C
 
-Zero-copy `.nxb` reader in C99. No dependencies beyond `libc`/`libm`.
+Zero-copy `.nxb` reader and direct-to-buffer writer in C99. No dependencies beyond `libc`.
 
 ## Build & Test
 
@@ -12,7 +12,7 @@ make bench       # compile benchmark binary
 ./bench ../js/fixtures
 ```
 
-## API
+## Read a file
 
 ```c
 #include "nxs.h"
@@ -23,10 +23,8 @@ size_t   size = ...;
 nxs_reader_t r;
 nxs_open(&r, data, size);
 
-// Schema
 printf("%d records, %d keys\n", r.record_count, r.key_count);
 
-// O(1) record access
 nxs_object_t obj;
 nxs_record(&r, 42, &obj);
 
@@ -48,3 +46,38 @@ nxs_max_f64(&r, "score", &mx);
 
 nxs_close(&r);
 ```
+
+## Write a file
+
+```c
+#include "nxs_writer.h"
+
+const char *keys[] = {"id", "username", "score", "active"};
+nxs_writer_t w;
+nxs_writer_init(&w, keys, 4, 64 * 1024);
+
+nxs_writer_begin_object(&w);
+nxs_write_i64 (&w, 0, 42);
+nxs_write_str (&w, 1, "alice", 5);
+nxs_write_f64 (&w, 2, 9.5);
+nxs_write_bool(&w, 3, 1);
+nxs_writer_end_object(&w);
+
+nxs_writer_finish(&w);
+// w.out      — pointer to assembled .nxb bytes
+// w.out_size — byte count
+
+fwrite(w.out, 1, w.out_size, fopen("out.nxb", "wb"));
+nxs_writer_free(&w);
+```
+
+## Files
+
+| File | Purpose |
+| :--- | :--- |
+| `nxs.h` / `nxs.c` | Reader API |
+| `nxs_writer.h` / `nxs_writer.c` | Writer API |
+
+---
+
+For the format specification see [`SPEC.md`](../SPEC.md). For cross-language examples see [`GETTING_STARTED.md`](../GETTING_STARTED.md).

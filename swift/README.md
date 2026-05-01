@@ -1,7 +1,6 @@
-# NXS — Swift Reader
+# NXS — Swift
 
-Zero-copy `.nxb` reader in Swift 5.9+. Uses `Foundation.Data` for memory
-mapping; no third-party dependencies.
+Zero-copy `.nxb` reader and direct-to-buffer writer in Swift 5.9+. Uses `Foundation.Data` for memory mapping; no third-party dependencies.
 
 ## Build & Test
 
@@ -12,7 +11,7 @@ swift run nxs-test ../js/fixtures     # smoke tests
 swift run -c release nxs-bench ../js/fixtures   # benchmark
 ```
 
-## API
+## Read a file
 
 ```swift
 import NXS
@@ -39,3 +38,38 @@ let sumi: Int64   = try reader.sumI64("id")
 let mn:   Double? = try reader.minF64("score")
 let mx:   Double? = try reader.maxF64("score")
 ```
+
+## Write a file
+
+```swift
+import NXS
+
+let schema = NXSSchema(keys: ["id", "username", "score", "active"])
+let w = NXSWriter(schema: schema)
+
+w.beginObject()
+w.writeI64(slot: 0, value: 42)
+w.writeStr(slot: 1, value: "alice")
+w.writeF64(slot: 2, value: 9.5)
+w.writeBool(slot: 3, value: true)
+w.endObject()
+
+let bytes: [UInt8] = w.finish()
+
+// Convenience: write from [[String: Any]]
+let bytes2 = NXSWriter.fromRecords(
+    keys: ["id", "username", "score"],
+    records: [["id": 1, "username": "bob", "score": 8.2]]
+)
+```
+
+## Files
+
+| File | Purpose |
+| :--- | :--- |
+| `Sources/NXS/NXSReader.swift` | Reader (`NXSReader`, `NXSObject`) |
+| `Sources/NXS/NXSWriter.swift` | Writer (`NXSSchema`, `NXSWriter`) |
+
+---
+
+For the format specification see [`SPEC.md`](../SPEC.md). For cross-language examples see [`GETTING_STARTED.md`](../GETTING_STARTED.md).

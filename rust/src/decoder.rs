@@ -434,6 +434,11 @@ fn decode_list(data: &[u8], offset: usize) -> Result<DecodedValue> {
             .map_err(|_| NxsError::OutOfBounds)?,
     ) as usize;
     let data_start = offset + 16;
+    // Reject impossible counts before allocating — elem slots are 8 bytes each.
+    let max_elems = (data.len().saturating_sub(data_start)) / 8;
+    if elem_count > max_elems {
+        return Err(NxsError::OutOfBounds);
+    }
     let mut items = Vec::with_capacity(elem_count);
     for i in 0..elem_count {
         let elem_off = data_start + i * 8;
