@@ -503,9 +503,56 @@ pub fn run_import(args: &ImportArgs) -> Result<ImportReport> {
     }
 }
 
-/// Top-level driver for nxs-export (dispatched on `--to`). Stub.
-pub fn run_export(_args: &ExportArgs) -> Result<ExportReport> {
-    unimplemented!("run_export — see plan step `impl: nxs-export JSON dispatch`")
+/// Top-level driver for nxs-export (dispatched on `--to`).
+pub fn run_export(args: &ExportArgs) -> Result<ExportReport> {
+    use crate::convert::json_out;
+
+    let input_path = args.common.input_path.as_deref();
+    let output_path = args.common.output_path.as_deref();
+
+    // Helper: open input as a reader (file or stdin).
+    // Export is single-pass (reads .nxb bytes fully), so no stdin spill needed.
+    macro_rules! open_input {
+        ($path:expr) => {
+            std::fs::File::open($path).map_err(|e| {
+                crate::error::NxsError::IoError(format!("{}: {e}", $path.display()))
+            })
+        };
+    }
+
+    macro_rules! open_output {
+        ($path:expr) => {
+            std::fs::File::create($path).map_err(|e| {
+                crate::error::NxsError::IoError(format!("{}: {e}", $path.display()))
+            })
+        };
+    }
+
+    match args.to {
+        ExportFormat::Json => match (input_path, output_path) {
+            (Some(inp), Some(out)) => {
+                json_out::run(open_input!(inp)?, open_output!(out)?, args)
+            }
+            (Some(inp), None) => json_out::run(open_input!(inp)?, std::io::stdout(), args),
+            (None, Some(out)) => {
+                json_out::run(std::io::stdin(), open_output!(out)?, args)
+            }
+            (None, None) => json_out::run(std::io::stdin(), std::io::stdout(), args),
+        },
+        ExportFormat::Csv => {
+            use crate::convert::csv_out;
+            match (input_path, output_path) {
+                (Some(inp), Some(out)) => {
+                    csv_out::run(open_input!(inp)?, open_output!(out)?, args)
+                }
+                (Some(inp), None) => csv_out::run(open_input!(inp)?, std::io::stdout(), args),
+                (None, Some(out)) => {
+                    csv_out::run(std::io::stdin(), open_output!(out)?, args)
+                }
+                (None, None) => csv_out::run(std::io::stdin(), std::io::stdout(), args),
+            }
+        }
+    }
 }
 
 /// Top-level driver for nxs-inspect. Stub.
