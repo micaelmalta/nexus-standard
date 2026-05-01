@@ -311,9 +311,8 @@ pub fn emit<R: Read, W: Write>(
                     b'@' => {
                         if let Ok(t) = value.parse::<i64>() {
                             nxs_writer.write_time(slot, t);
-                        } else {
-                            nxs_writer.write_str(slot, value);
                         }
+                        // Non-integer time values omitted; avoids wrong-type blob.
                     }
                     b'<' => {
                         if let Ok(bytes) = (0..value.len())
@@ -324,9 +323,8 @@ pub fn emit<R: Read, W: Write>(
                             .collect::<std::result::Result<Vec<u8>, _>>()
                         {
                             nxs_writer.write_bytes(slot, &bytes);
-                        } else {
-                            nxs_writer.write_str(slot, value);
                         }
+                        // Hex decode failure: omit rather than write wrong type.
                     }
                     b'^' => {
                         // null: key stays absent

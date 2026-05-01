@@ -149,14 +149,16 @@ pub fn emit<R: Read, W: Write>(
                         nxs_writer.write_bool(slot, value == "true");
                     }
                     b'@' => {
+                        // Time slots store unix-nanosecond i64. If the value
+                        // cannot be parsed as i64 (e.g. ISO-8601 string from
+                        // inference), omit rather than write a wrong-typed blob.
                         if let Ok(t) = value.parse::<i64>() {
                             nxs_writer.write_time(slot, t);
-                        } else {
-                            nxs_writer.write_str(slot, value);
                         }
                     }
                     b'<' => {
-                        // Decode hex string to bytes; fall back to str on error.
+                        // Hex-encoded binary. Omit on any decode error to avoid
+                        // writing a string blob into a binary-typed slot.
                         if let Ok(bytes) = (0..value.len())
                             .step_by(2)
                             .map(|i| {
@@ -165,8 +167,6 @@ pub fn emit<R: Read, W: Write>(
                             .collect::<std::result::Result<Vec<u8>, _>>()
                         {
                             nxs_writer.write_bytes(slot, &bytes);
-                        } else {
-                            nxs_writer.write_str(slot, value);
                         }
                     }
                     b'^' => {

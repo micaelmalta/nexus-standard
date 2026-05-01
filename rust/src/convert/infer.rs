@@ -275,4 +275,38 @@ mod tests {
             NxsError::ConvertSchemaConflict(_)
         ));
     }
+
+    #[test]
+    fn test_infer_first_wins_returns_first_observed_sigil() {
+        // int first, then string → first_sigil = int
+        let mut ks = KeyState::default();
+        ks.observe("1");     // int → first_sigil = =
+        ks.observe("hello"); // string → conflict
+        assert_eq!(
+            ks.resolve_sigil(ConflictPolicy::FirstWins).unwrap(),
+            SIGIL_INT,
+            "FirstWins: first-seen type (int) must win"
+        );
+
+        // string first, then int → first_sigil = string
+        let mut ks2 = KeyState::default();
+        ks2.observe("hello"); // string → first_sigil = "
+        ks2.observe("1");     // int → conflict
+        assert_eq!(
+            ks2.resolve_sigil(ConflictPolicy::FirstWins).unwrap(),
+            SIGIL_STRING,
+            "FirstWins: first-seen type (string) must win"
+        );
+
+        // null then non-null: first_sigil must not be set by the null observation
+        let mut ks3 = KeyState::default();
+        ks3.observe("");    // null → first_sigil stays None
+        ks3.observe("42");  // int → first_sigil = =
+        ks3.observe("abc"); // string → conflict
+        assert_eq!(
+            ks3.resolve_sigil(ConflictPolicy::FirstWins).unwrap(),
+            SIGIL_INT,
+            "FirstWins: null observations must not pollute first_sigil"
+        );
+    }
 }
