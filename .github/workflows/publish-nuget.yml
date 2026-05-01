@@ -37,6 +37,15 @@ jobs:
         working-directory: csharp
         run: dotnet pack -c Release -p:NxsTargetFramework=net9.0 -o ./nupkg
 
+      - name: Require NuGet API key
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "${NUGET_API_KEY}" ]; then
+            echo "::error::Add repository secret NUGET_API_KEY (nuget.org API key)."
+            exit 1
+          fi
+
       - name: Publish to NuGet
         working-directory: csharp
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
@@ -46,5 +55,5 @@ jobs:
           mkdir /tmp/smoke-nuget && cd /tmp/smoke-nuget
           dotnet new console -n SmokeTest
           cd SmokeTest
-          dotnet add package NxsFormat
+          dotnet add package nexus-standard
           echo "Smoke test: package installable"

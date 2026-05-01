@@ -1,5 +1,5 @@
 [package]
-name = "nxs"
+name = "nexus-standard"
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.75"
@@ -7,9 +7,9 @@ authors = ["Micael Malta"]
 license = "MIT"
 description = "Zero-copy compiler and reader for the Nexus Standard (NXS) bi-modal serialization format"
 repository = "https://github.com/micaelmalta/nxs"
-documentation = "https://docs.rs/nxs"
+documentation = "https://docs.rs/nexus-standard"
 readme = "README.md"
-keywords = ["serialization", "binary", "zero-copy", "nxs", "nexus"]
+keywords = ["serialization", "binary", "zero-copy", "nxs", "nexus", "nexus-standard"]
 categories = ["encoding", "parser-implementations", "command-line-utilities"]
 
 [lib]

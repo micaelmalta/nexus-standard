@@ -1,5 +1,5 @@
 {
-  "name": "@micaelmalta/nxs",
+  "name": "@micaelmalta/nexus-standard",
   "version": "1.0.0",
   "type": "module",
   "description": "JavaScript reader for the Nexus Standard (NXS) binary format",

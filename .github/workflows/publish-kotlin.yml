@@ -34,6 +34,23 @@ jobs:
       - run: make fixtures FIXTURE_COUNT=1000
       - run: make test-kotlin
 
+      - name: Require Maven Central + signing secrets
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
+        run: |
+          missing=
+          [ -z "${OSSRH_USERNAME}" ] && missing="${missing} OSSRH_USERNAME"
+          [ -z "${OSSRH_PASSWORD}" ] && missing="${missing} OSSRH_PASSWORD"
+          [ -z "${GPG_SIGNING_KEY}" ] && missing="${missing} GPG_SIGNING_KEY"
+          [ -z "${GPG_SIGNING_PASSWORD}" ] && missing="${missing} GPG_SIGNING_PASSWORD"
+          if [ -n "${missing}" ]; then
+            echo "::error::Add repository secrets:${missing} (Sonatype OSSRH + GPG for Maven Central)."
+            exit 1
+          fi
+
       - name: Publish to Maven Central
         working-directory: kotlin
         run: ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository --no-daemon

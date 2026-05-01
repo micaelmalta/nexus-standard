@@ -10,7 +10,7 @@
     <RootNamespace>Nxs</RootNamespace>
 
     <!-- NuGet package metadata -->
-    <PackageId>NxsFormat</PackageId>
+    <PackageId>nexus-standard</PackageId>
     <Version>1.0.0</Version>
     <Authors>Micael Malta</Authors>
     <Description>Zero-copy reader for the Nexus Standard (NXS) binary format. Provides O(1) random access to typed records via the tail-index.</Description>

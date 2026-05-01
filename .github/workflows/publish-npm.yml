@@ -32,6 +32,15 @@ jobs:
       - run: make fixtures FIXTURE_COUNT=1000
       - run: make test-js
 
+      - name: Require npm token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::Add repository secret NPM_TOKEN (npm granular access token with publish for @micaelmalta/nexus-standard)."
+            exit 1
+          fi
+
       - name: Publish
         working-directory: js
         run: npm publish --access public
@@ -42,5 +51,5 @@ jobs:
         run: |
           mkdir /tmp/smoke-npm && cd /tmp/smoke-npm
           npm init -y
-          npm install @micaelmalta/nxs
-          node -e "import('@micaelmalta/nxs').then(m => { console.log('ok', Object.keys(m)) })"
+          npm install @micaelmalta/nexus-standard
+          node -e "import('@micaelmalta/nexus-standard').then(m => { console.log('ok', Object.keys(m)) })"

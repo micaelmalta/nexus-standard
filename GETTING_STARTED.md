@@ -10,16 +10,16 @@ Install from your language's package registry — no build tools required for th
 
 | Language | Registry | Install command |
 | :--- | :--- | :--- |
-| Rust | crates.io | `cargo add nxs` |
-| JavaScript | npm | `npm install @micaelmalta/nxs` |
-| Python | PyPI | `pip install nxs-format` |
+| Rust | crates.io | `cargo add nexus-standard` |
+| JavaScript | npm | `npm install @micaelmalta/nexus-standard` |
+| Python | PyPI | `pip install nexus-standard` |
 | Go | pkg.go.dev | `go get github.com/micaelmalta/nxs/go` |
-| Ruby | RubyGems | `gem install nxs-format` |
-| PHP | Packagist | `composer require micaelmalta/nxs` |
+| Ruby | RubyGems | `gem install nexus-standard` |
+| PHP | Packagist | `composer require micaelmalta/nexus-standard` |
 | C | GitHub Releases | Download `nxs-c-1.0.0.tar.gz` and include `nxs.h` + `nxs.c` |
 | Swift | Swift Package Index | `.package(url: "https://github.com/micaelmalta/nxs", from: "1.0.0")` |
-| Kotlin | Maven Central | `implementation("io.github.micaelmalta:nxs-kotlin:1.0.0")` |
-| C# | NuGet | `dotnet add package NxsFormat` |
+| Kotlin | Maven Central | `implementation("io.github.micaelmalta:nexus-standard:1.0.0")` |
+| C# | NuGet | `dotnet add package nexus-standard` |
 
 ---
 

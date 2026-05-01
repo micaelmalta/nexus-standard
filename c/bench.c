@@ -1,3 +1,8 @@
+// glibc + -std=c99 does not expose clock_gettime / struct timespec unless POSIX is requested.
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 // NXS C reader benchmark — NXS vs JSON (jsmn, minimal) vs raw CSV scan
 // Build: make bench && ./bench ../js/fixtures
 //

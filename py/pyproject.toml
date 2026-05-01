@@ -1,9 +1,9 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "nxs-format"
+name = "nexus-standard"
 version = "1.0.0"
 description = "Zero-copy reader for the Nexus Standard (NXS) binary format"
 readme = "README.md"

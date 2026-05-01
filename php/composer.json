@@ -1,5 +1,5 @@
 {
-    "name": "micaelmalta/nxs",
+    "name": "micaelmalta/nexus-standard",
     "description": "Zero-copy reader for the Nexus Standard (NXS) binary format",
     "type": "library",
     "version": "1.0.0",

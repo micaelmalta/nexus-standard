@@ -55,10 +55,10 @@ publishing {
     publications {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
-            artifactId = "nxs-kotlin"
+            artifactId = "nexus-standard"
 
             pom {
-                name.set("nxs-kotlin")
+                name.set("nexus-standard")
                 description.set("Zero-copy reader for the Nexus Standard (NXS) binary format")
                 url.set("https://github.com/micaelmalta/nxs")
                 licenses {

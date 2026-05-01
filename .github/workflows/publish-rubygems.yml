@@ -31,9 +31,18 @@ jobs:
       - run: make fixtures FIXTURE_COUNT=1000
       - run: make test-ruby
 
+      - name: Require RubyGems API key
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          if [ -z "${RUBYGEMS_API_KEY}" ]; then
+            echo "::error::Add repository secret RUBYGEMS_API_KEY (RubyGems API key from rubygems.org)."
+            exit 1
+          fi
+
       - name: Build gem
         working-directory: ruby
-        run: gem build nxs-format.gemspec
+        run: gem build nexus-standard.gemspec
 
       - name: Publish to RubyGems
         working-directory: ruby
@@ -44,9 +53,9 @@ jobs:
           :rubygems_api_key: ${{ secrets.RUBYGEMS_API_KEY }}
           EOF
           chmod 0600 ~/.gem/credentials
-          gem push nxs-format-*.gem
+          gem push nexus-standard-*.gem
 
       - name: Smoke test (install from registry)
         run: |
-          gem install nxs-format
+          gem install nexus-standard
           ruby -e "require 'nxs'; puts 'ok'"

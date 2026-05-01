@@ -1,1 +1,1 @@
-rootProject.name = "nxs"
+rootProject.name = "nexus-standard"

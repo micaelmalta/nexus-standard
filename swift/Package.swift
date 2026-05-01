@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "nxs",
+    name: "nexus-standard",
     products: [
         .library(name: "NXS", targets: ["NXS"]),
     ],

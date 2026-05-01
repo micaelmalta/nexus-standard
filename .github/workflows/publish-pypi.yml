@@ -31,6 +31,15 @@ jobs:
       - run: make fixtures FIXTURE_COUNT=1000
       - run: make test-py-ci
 
+      - name: Require PyPI token
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "${PYPI_API_TOKEN}" ]; then
+            echo "::error::Add repository secret PYPI_API_TOKEN (PyPI API token for project nexus-standard)."
+            exit 1
+          fi
+
       - name: Install build tools
         run: pip install build twine
 
@@ -47,5 +56,5 @@ jobs:
 
       - name: Smoke test (install from registry)
         run: |
-          pip install nxs-format
+          pip install nexus-standard
           python -c "import nxs; print('ok')"

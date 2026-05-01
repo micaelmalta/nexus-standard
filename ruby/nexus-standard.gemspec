@@ -1,5 +1,5 @@
 Gem::Specification.new do |spec|
-  spec.name          = "nxs-format"
+  spec.name          = "nexus-standard"
   spec.version       = "1.0.0"
   spec.authors       = ["Micael Malta"]
   spec.email         = ["micael@example.com"]
