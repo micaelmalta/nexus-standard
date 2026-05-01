@@ -244,6 +244,32 @@ pub struct InspectReport {
     pub record_count: usize,
 }
 
+// ── Exit code mapping ─────────────────────────────────────────────────────────
+
+/// Map an `NxsError` to the documented exit code for the converter binaries.
+///
+/// Exit codes (from spec):
+///   0 — success
+///   1 — generic error
+///   2 — usage error (bad/missing flags)
+///   3 — input format error
+///   4 — schema conflict
+///   5 — IO error
+pub fn exit_code_for(err: &crate::error::NxsError) -> i32 {
+    use crate::error::NxsError;
+    match err {
+        NxsError::ConvertSchemaConflict(_) => 4,
+        NxsError::ConvertParseError { .. }
+        | NxsError::ConvertEntityExpansion
+        | NxsError::ConvertDepthExceeded
+        | NxsError::BadMagic
+        | NxsError::OutOfBounds
+        | NxsError::RecursionLimit => 3,
+        NxsError::IoError(_) => 5,
+        _ => 1,
+    }
+}
+
 // ── Entry points (stubs) ──────────────────────────────────────────────────────
 
 /// Top-level driver for nxs-import (dispatched on `--from`). Stub.

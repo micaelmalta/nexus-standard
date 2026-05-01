@@ -14,6 +14,14 @@ pub enum NxsError {
     Overflow,
     ParseError(String),
     IoError(String),
+    /// Exit 4 — two records disagree on a key's sigil and policy is `error`.
+    ConvertSchemaConflict(String),
+    /// Exit 3 — malformed JSON/CSV/XML; byte offset is the position in the stream.
+    ConvertParseError { offset: u64, msg: String },
+    /// Exit 3 — XML entity-expansion attack detected (billion-laughs etc.).
+    ConvertEntityExpansion,
+    /// Exit 3 — nesting depth exceeded `--max-depth` / `--xml-max-depth`.
+    ConvertDepthExceeded,
 }
 
 impl fmt::Display for NxsError {
@@ -31,6 +39,12 @@ impl fmt::Display for NxsError {
             NxsError::Overflow => write!(f, "ERR_OVERFLOW"),
             NxsError::ParseError(s) => write!(f, "ParseError: {s}"),
             NxsError::IoError(s) => write!(f, "IoError: {s}"),
+            NxsError::ConvertSchemaConflict(s) => write!(f, "ERR_SCHEMA_CONFLICT: {s}"),
+            NxsError::ConvertParseError { offset, msg } => {
+                write!(f, "ERR_PARSE_ERROR at byte {offset}: {msg}")
+            }
+            NxsError::ConvertEntityExpansion => write!(f, "ERR_ENTITY_EXPANSION"),
+            NxsError::ConvertDepthExceeded => write!(f, "ERR_DEPTH_EXCEEDED"),
         }
     }
 }
