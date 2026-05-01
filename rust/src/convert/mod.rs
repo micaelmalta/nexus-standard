@@ -251,6 +251,61 @@ pub struct InspectReport {
     pub record_count: usize,
 }
 
+// ── Schema hint YAML loader ───────────────────────────────────────────────────
+
+/// YAML schema hint file format (from spec `schema_hints_format`).
+/// `keys:` maps key names to `{ sigil, optional?, list_of? }`.
+#[derive(Debug, serde::Deserialize)]
+struct SchemaHintFile {
+    keys: std::collections::HashMap<String, SchemaHintKey>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct SchemaHintKey {
+    sigil: String,
+    #[serde(default)]
+    optional: bool,
+    list_of: Option<String>,
+}
+
+/// Load an `InferredSchema` from a `--schema <file.yaml>` hint file.
+/// The caller uses this instead of running inference pass 1.
+pub fn load_schema_hint(path: &std::path::Path) -> Result<InferredSchema> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| crate::error::NxsError::IoError(format!("{}: {e}", path.display())))?;
+    let hint: SchemaHintFile = serde_yml::from_str(&text).map_err(|e| {
+        crate::error::NxsError::ConvertParseError {
+            offset: 0,
+            msg: format!("schema hint YAML parse error: {e}"),
+        }
+    })?;
+
+    let keys = hint
+        .keys
+        .into_iter()
+        .map(|(name, k)| {
+            let sigil = k
+                .sigil
+                .bytes()
+                .next()
+                .unwrap_or(b'"');
+            let list_of = k.list_of.as_deref().and_then(|s| s.bytes().next());
+            InferredKey {
+                name,
+                sigil,
+                optional: k.optional,
+                list_of,
+            }
+        })
+        .collect();
+
+    Ok(InferredSchema {
+        keys,
+        key_states: vec![],
+        total_records: 0,
+    })
+}
+
 // ── Exit code mapping ─────────────────────────────────────────────────────────
 
 /// Map an `NxsError` to the documented exit code for the converter binaries.
@@ -279,11 +334,83 @@ pub fn exit_code_for(err: &crate::error::NxsError) -> i32 {
 
 // ── Entry points (stubs) ──────────────────────────────────────────────────────
 
-/// Top-level driver for nxs-import (dispatched on `--from`). Stub.
-pub fn run_import(_args: &ImportArgs) -> Result<ImportReport> {
-    unimplemented!(
-        "run_import — see plan step `impl: nxs-import JSON dispatch in convert::run_import`"
-    )
+/// Top-level driver for nxs-import (dispatched on `--from`).
+pub fn run_import(args: &ImportArgs) -> Result<ImportReport> {
+    use crate::convert::json_in;
+    use std::io::BufReader;
+
+    let input_path = args.common.input_path.as_deref();
+    let output_path = args.common.output_path.as_deref();
+
+    match args.from {
+        ImportFormat::Json => {
+            // Two-pass: open file twice (pass 1 + pass 2), or spill stdin.
+            match input_path {
+                Some(path) => {
+                    // Pass 1: infer schema (or load from hint)
+                    let schema = if let Some(hint_path) = &args.schema_hint {
+                        load_schema_hint(hint_path)?
+                    } else {
+                        let f1 = std::fs::File::open(path)
+                            .map_err(|e| crate::error::NxsError::IoError(format!("{}: {e}", path.display())))?;
+                        json_in::infer_schema(BufReader::new(f1), args)?
+                    };
+
+                    // Pass 2: emit
+                    let f2 = std::fs::File::open(path)
+                        .map_err(|e| crate::error::NxsError::IoError(format!("{}: {e}", path.display())))?;
+
+                    match output_path {
+                        Some(out_path) => {
+                            let out = std::fs::File::create(out_path)
+                                .map_err(|e| crate::error::NxsError::IoError(format!("{}: {e}", out_path.display())))?;
+                            json_in::emit(BufReader::new(f2), out, &schema, args)
+                        }
+                        None => {
+                            json_in::emit(BufReader::new(f2), std::io::stdout(), &schema, args)
+                        }
+                    }
+                }
+                None => {
+                    // stdin: spill to tempfile, then two passes over the tempfile.
+                    // With --schema, skip pass 1 (no spill needed — single pass).
+                    let mut spill = tempfile::NamedTempFile::new()
+                        .map_err(|e| crate::error::NxsError::IoError(e.to_string()))?;
+                    std::io::copy(&mut std::io::stdin(), &mut spill)
+                        .map_err(|e| crate::error::NxsError::IoError(e.to_string()))?;
+                    let spill_path = spill.path().to_path_buf();
+
+                    let schema = if let Some(hint_path) = &args.schema_hint {
+                        load_schema_hint(hint_path)?
+                    } else {
+                        let f1 = std::fs::File::open(&spill_path)
+                            .map_err(|e| crate::error::NxsError::IoError(e.to_string()))?;
+                        json_in::infer_schema(BufReader::new(f1), args)?
+                    };
+
+                    let f2 = std::fs::File::open(&spill_path)
+                        .map_err(|e| crate::error::NxsError::IoError(e.to_string()))?;
+                    match output_path {
+                        Some(out_path) => {
+                            let out = std::fs::File::create(out_path)
+                                .map_err(|e| crate::error::NxsError::IoError(format!("{}: {e}", out_path.display())))?;
+                            json_in::emit(BufReader::new(f2), out, &schema, args)
+                        }
+                        None => {
+                            json_in::emit(BufReader::new(f2), std::io::stdout(), &schema, args)
+                        }
+                    }
+                    // spill NamedTempFile is dropped here → removed from disk
+                }
+            }
+        }
+        ImportFormat::Csv => {
+            unimplemented!("CSV import — see plan step `impl: CSV dispatch in run_import`")
+        }
+        ImportFormat::Xml => {
+            unimplemented!("XML import — see plan step `impl: XML dispatch in run_import`")
+        }
+    }
 }
 
 /// Top-level driver for nxs-export (dispatched on `--to`). Stub.
