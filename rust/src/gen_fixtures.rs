@@ -9,7 +9,7 @@ mod parser;
 mod writer;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use writer::{NxsWriter, Schema, Slot};
 
 const SLOTS: &[&str] = &[
@@ -41,6 +41,38 @@ struct Rec {
     score: f64,
 }
 
+fn ensure_out_dir_writable(out_dir: &Path) {
+    let probe = out_dir.join(".gen_fixtures_write_probe");
+    match fs::write(&probe, b"") {
+        Ok(()) => {
+            let _ = fs::remove_file(&probe);
+        }
+        Err(e) => {
+            eprintln!(
+                "error: output directory is not writable: {}\n  {e}",
+                out_dir.display()
+            );
+            eprintln!(
+                "hint: chmod u+w \"{}\"  (if files were created as root: sudo chown -R \"$USER\" \"{}\")",
+                out_dir.display(),
+                out_dir.display()
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn write_file(path: &Path, contents: &[u8], label: &str) {
+    if let Err(e) = fs::write(path, contents) {
+        eprintln!("error: failed to write {label} {}: {e}", path.display());
+        eprintln!(
+            "hint: chmod -R u+w \"{}\" or fix ownership of that directory.",
+            path.parent().unwrap_or(path).display()
+        );
+        std::process::exit(1);
+    }
+}
+
 fn build(n: usize) -> Vec<Rec> {
     (0..n)
         .map(|i| Rec {
@@ -55,7 +87,7 @@ fn build(n: usize) -> Vec<Rec> {
         .collect()
 }
 
-fn write_nxb(records: &[Rec], path: &PathBuf) {
+fn write_nxb(records: &[Rec], path: &Path) {
     let schema = Schema::new(SLOTS);
     let mut w = NxsWriter::with_capacity(&schema, records.len() * 128 + 1024);
     for r in records {
@@ -71,11 +103,11 @@ fn write_nxb(records: &[Rec], path: &PathBuf) {
         w.end_object();
     }
     let bytes = w.finish();
-    fs::write(path, &bytes).expect("write nxb");
+    write_file(path, &bytes, "nxb");
     println!("  {} → {} bytes", path.display(), bytes.len());
 }
 
-fn write_json(records: &[Rec], path: &PathBuf) {
+fn write_json(records: &[Rec], path: &Path) {
     let mut s = String::with_capacity(records.len() * 180);
     s.push('[');
     for (i, r) in records.iter().enumerate() {
@@ -88,11 +120,11 @@ fn write_json(records: &[Rec], path: &PathBuf) {
         ));
     }
     s.push(']');
-    fs::write(path, &s).expect("write json");
+    write_file(path, s.as_bytes(), "json");
     println!("  {} → {} bytes", path.display(), s.len());
 }
 
-fn write_csv(records: &[Rec], path: &PathBuf) {
+fn write_csv(records: &[Rec], path: &Path) {
     let mut s = String::with_capacity(records.len() * 80);
     s.push_str("id,username,email,age,balance,active,score,created_at\n");
     for r in records {
@@ -101,7 +133,7 @@ fn write_csv(records: &[Rec], path: &PathBuf) {
             r.id, r.username, r.email, r.age, r.balance, r.active, r.score
         ));
     }
-    fs::write(path, &s).expect("write csv");
+    write_file(path, s.as_bytes(), "csv");
     println!("  {} → {} bytes", path.display(), s.len());
 }
 
@@ -114,6 +146,7 @@ fn main() {
     }
     let out_dir = PathBuf::from(&args[1]);
     fs::create_dir_all(&out_dir).expect("mkdir");
+    ensure_out_dir_writable(&out_dir);
 
     let sizes: Vec<usize> = if args.len() > 2 {
         args[2..]

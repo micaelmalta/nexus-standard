@@ -71,7 +71,9 @@ rust-examples:
 
 test-rust-ci: test-rust rust-examples
 
+# Best-effort: repo checkouts or docker-created trees may lack u+w on js/fixtures.
 fixtures:
+	@chmod -R u+w $(FIXTURE_DIR) 2>/dev/null || true
 	cd rust && cargo run --release --bin gen_fixtures -- ../$(FIXTURE_DIR) $(FIXTURE_COUNT)
 
 # ── JavaScript ───────────────────────────────────────────────────────────────
