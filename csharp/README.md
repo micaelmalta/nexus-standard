@@ -1,7 +1,6 @@
-# NXS — C# Reader
+# NXS — C#
 
-Zero-copy `.nxb` reader for C# (.NET 8). Uses only BCL types; no NuGet
-dependencies.
+Zero-copy `.nxb` reader and direct-to-buffer writer for C# (.NET 8). Uses only BCL types; no NuGet dependencies.
 
 ## Requirements
 
@@ -15,7 +14,7 @@ dotnet run -- ../js/fixtures          # smoke tests
 dotnet run -c Release -- ../js/fixtures ../js/fixtures  # pass dir twice to also bench
 ```
 
-## API
+## Read a file
 
 ```csharp
 using Nxs;
@@ -42,3 +41,38 @@ long    sumi = reader.SumI64("id");
 double? mn   = reader.MinF64("score");
 double? mx   = reader.MaxF64("score");
 ```
+
+## Write a file
+
+```csharp
+using Nxs;
+
+var schema = new NxsSchema(["id", "username", "score", "active"]);
+var w = new NxsWriter(schema);
+
+w.BeginObject();
+w.WriteI64(0, 42L);
+w.WriteStr(1, "alice");
+w.WriteF64(2, 9.5);
+w.WriteBool(3, true);
+w.EndObject();
+
+byte[] bytes = w.Finish();
+
+// Convenience: write from a list of dictionaries
+byte[] bytes2 = NxsWriter.FromRecords(
+    ["id", "username", "score"],
+    [new Dictionary<string, object?> { ["id"] = 1L, ["username"] = "bob", ["score"] = 8.2 }]
+);
+```
+
+## Files
+
+| File | Purpose |
+| :--- | :--- |
+| `NxsReader.cs` | Reader (`NxsReader`, `NxsObject`) |
+| `NxsWriter.cs` | Writer (`NxsSchema`, `NxsWriter`) |
+
+---
+
+For the format specification see [`SPEC.md`](../SPEC.md). For cross-language examples see [`GETTING_STARTED.md`](../GETTING_STARTED.md).

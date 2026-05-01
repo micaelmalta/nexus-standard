@@ -49,6 +49,30 @@ puts reader.sum_f64("score")          # 6.78 ms at 1M records vs 942 ms pure Rub
 
 At 1M records the C extension is **139× faster** than pure Ruby for `sum_f64`, and **5.6× faster** than `JSON.parse`.
 
+## Write a file
+
+```ruby
+require_relative "nxs_writer"
+
+schema = Nxs::Schema.new(["id", "username", "score", "active"])
+w = Nxs::Writer.new(schema)
+
+w.begin_object
+w.write_i64(0, 42)
+w.write_str(1, "alice")
+w.write_f64(2, 9.5)
+w.write_bool(3, true)
+w.end_object
+
+data = w.finish   # binary String (encoding ASCII-8BIT)
+
+# Convenience: write from an array of hashes
+data2 = Nxs::Writer.from_records(
+  ["id", "username", "score"],
+  [{ "id" => 1, "username" => "bob", "score" => 8.2 }]
+)
+```
+
 ## Tests
 
 ```bash
@@ -67,6 +91,7 @@ ruby bench_c.rb ../js/fixtures     # C extension vs JSON
 | File | Purpose |
 | :--- | :--- |
 | `nxs.rb` | Pure-Ruby reader (`Nxs::Reader`, `Nxs::Object`) |
+| `nxs_writer.rb` | Pure-Ruby writer (`Nxs::Schema`, `Nxs::Writer`) |
 | `ext/nxs/nxs_ext.c` | C extension source (`Nxs::CReader`, `Nxs::CObject`) |
 | `ext/nxs/extconf.rb` | Extension build configuration |
 | `ext/build.sh` | Compiles the C extension |

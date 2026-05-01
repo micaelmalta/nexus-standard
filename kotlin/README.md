@@ -1,7 +1,6 @@
-# NXS — Kotlin Reader
+# NXS — Kotlin
 
-Zero-copy `.nxb` reader for Kotlin/JVM. Uses only `java.nio.ByteBuffer` plus
-`org.json` for the test JSON parsing.
+Zero-copy `.nxb` reader and direct-to-buffer writer for Kotlin/JVM. Uses only `java.nio.ByteBuffer` plus `org.json` for test JSON parsing.
 
 ## Requirements
 
@@ -15,11 +14,10 @@ cd kotlin
 gradle run --args="../js/fixtures"    # smoke tests
 ```
 
-## API
+## Read a file
 
 ```kotlin
 import nxs.NxsReader
-import nxs.NxsError
 
 val data = File("data.nxb").readBytes()
 val reader = NxsReader(data)
@@ -43,3 +41,39 @@ val sumi: Long    = reader.sumI64("id")
 val mn:   Double? = reader.minF64("score")
 val mx:   Double? = reader.maxF64("score")
 ```
+
+## Write a file
+
+```kotlin
+import nxs.NxsSchema
+import nxs.NxsWriter
+
+val schema = NxsSchema(listOf("id", "username", "score", "active"))
+val w = NxsWriter(schema)
+
+w.beginObject()
+w.writeI64(0, 42L)
+w.writeStr(1, "alice")
+w.writeF64(2, 9.5)
+w.writeBool(3, true)
+w.endObject()
+
+val bytes: ByteArray = w.finish()
+
+// Convenience: write from a list of maps
+val bytes2 = NxsWriter.fromRecords(
+    listOf("id", "username", "score"),
+    listOf(mapOf("id" to 1L, "username" to "bob", "score" to 8.2))
+)
+```
+
+## Files
+
+| File | Purpose |
+| :--- | :--- |
+| `src/main/kotlin/nxs/NxsReader.kt` | Reader (`NxsReader`, `NxsObject`) |
+| `src/main/kotlin/nxs/NxsWriter.kt` | Writer (`NxsSchema`, `NxsWriter`) |
+
+---
+
+For the format specification see [`SPEC.md`](../SPEC.md). For cross-language examples see [`GETTING_STARTED.md`](../GETTING_STARTED.md).

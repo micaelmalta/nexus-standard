@@ -50,6 +50,30 @@ print(reader.record(42).get_str("username"))   # ~374 ns vs ~1.2 µs pure Python
 total = reader.sum_f64("score")                # 3.15 ms at 1M records
 ```
 
+## Write a file
+
+```python
+from nxs_writer import NxsSchema, NxsWriter
+
+schema = NxsSchema(["id", "username", "score", "active"])
+w = NxsWriter(schema)
+
+w.begin_object()
+w.write_i64(0, 42)
+w.write_str(1, "alice")
+w.write_f64(2, 9.5)
+w.write_bool(3, True)
+w.end_object()
+
+data: bytes = w.finish()
+
+# Convenience: write from a list of dicts
+data2 = NxsWriter.from_records(
+    ["id", "username", "score"],
+    [{"id": 1, "username": "bob", "score": 8.2}]
+)
+```
+
 ## Tests
 
 ```bash
@@ -69,6 +93,7 @@ python bench_c.py        # C extension vs json.loads
 | File | Purpose |
 | :--- | :--- |
 | `nxs.py` | Pure-Python reader |
+| `nxs_writer.py` | Pure-Python writer |
 | `_nxs.c` | C extension source |
 | `build_ext.sh` | Compiles `_nxs.c` → `_nxs.cpython-*.so` |
 

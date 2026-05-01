@@ -88,6 +88,30 @@ python3 server.py   # required for SharedArrayBuffer (COOP/COEP headers)
 | `workers.html` | `http://localhost:8000/workers.html` | 4 workers, SharedArrayBuffer, 0 bytes copied |
 | `explorer.html` | `http://localhost:8000/explorer.html` | 10M-line log explorer with virtual scroll |
 
+## Write a file
+
+```js
+import { NxsSchema, NxsWriter } from "./nxs_writer.js";
+
+const schema = new NxsSchema(["id", "username", "score", "active"]);
+const w = new NxsWriter(schema);
+
+w.beginObject();
+w.writeI64(0, 42n);
+w.writeStr(1, "alice");
+w.writeF64(2, 9.5);
+w.writeBool(3, true);
+w.endObject();
+
+const bytes = w.finish();   // Uint8Array
+
+// Convenience: write from an array of objects
+const bytes2 = NxsWriter.fromRecords(
+    ["id", "username", "score"],
+    [{ id: 1n, username: "bob", score: 8.2 }]
+);
+```
+
 ## Tests
 
 ```bash
@@ -99,6 +123,7 @@ node test.js
 | File | Purpose |
 | :--- | :--- |
 | `nxs.js` | Pure-JS reader (Node + browser) |
+| `nxs_writer.js` | Pure-JS writer (Node + browser) |
 | `wasm.js` | WASM loader and zero-copy Node helper |
 | `nxs_worker.js` | Web Worker that runs reducers on a shared buffer |
 | `json_worker.js` | JSON baseline worker for benchmark comparison |

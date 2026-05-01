@@ -48,6 +48,30 @@ echo $reader->sumF64("score") . "\n";      // 2.00 ms at 1M records
 
 At 1M records the C extension is **143× faster** than pure PHP for `sumF64`, and **15× faster** than `json_decode`.
 
+## Write a file
+
+```php
+require_once __DIR__ . '/NxsWriter.php';
+
+$schema = new Nxs\Schema(['id', 'username', 'score', 'active']);
+$w = new Nxs\Writer($schema);
+
+$w->beginObject();
+$w->writeI64(0, 42);
+$w->writeStr(1, 'alice');
+$w->writeF64(2, 9.5);
+$w->writeBool(3, true);
+$w->endObject();
+
+$data = $w->finish();   // binary string
+
+// Convenience: write from an array of associative arrays
+$data2 = Nxs\Writer::fromRecords(
+    ['id', 'username', 'score'],
+    [['id' => 1, 'username' => 'bob', 'score' => 8.2]]
+);
+```
+
 ## Tests
 
 ```bash
@@ -66,6 +90,7 @@ php -d extension=nxs_ext/modules/nxs.so bench_c.php ../js/fixtures  # C extensio
 | File | Purpose |
 | :--- | :--- |
 | `Nxs.php` | Pure-PHP reader (`Nxs\Reader`, `Nxs\Object`) |
+| `NxsWriter.php` | Pure-PHP writer (`Nxs\Schema`, `Nxs\Writer`) |
 | `nxs_ext/nxs_ext.c` | C extension source (`NxsReader`, `NxsObject`) |
 | `nxs_ext/config.m4` | Extension build configuration |
 | `nxs_ext/build.sh` | Compiles the C extension |

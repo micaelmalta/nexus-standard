@@ -150,6 +150,67 @@ check(
     "got=$gotBal1, expected=$expBal1"
 );
 
+// ── Writer round-trip tests ───────────────────────────────────────────────────
+
+require __DIR__ . '/NxsWriter.php';
+
+echo "\nNXS PHP Writer — Round-trip Tests\n";
+echo str_repeat('─', 56) . "\n";
+
+// writer round-trip: 3 records
+$schema = new Nxs\Schema(['id', 'username', 'score', 'active']);
+$w = new Nxs\Writer($schema);
+foreach ([[1, 'alice', 9.5, true], [2, 'bob', 7.2, false], [3, 'carol', 8.8, true]] as [$id, $name, $score, $active]) {
+    $w->beginObject();
+    $w->writeI64(0, $id); $w->writeStr(1, $name); $w->writeF64(2, $score); $w->writeBool(3, $active);
+    $w->endObject();
+}
+$rt = new Nxs\Reader($w->finish());
+check('writer round-trip: record count', $rt->recordCount() === 3);
+check('writer round-trip: record(0) id', $rt->record(0)->getI64('id') === 1);
+check('writer round-trip: record(1) username', $rt->record(1)->getStr('username') === 'bob');
+check('writer round-trip: record(2) score', abs((float)$rt->record(2)->getF64('score') - 8.8) < 1e-9);
+check('writer round-trip: record(0) active', $rt->record(0)->getBool('active') === true);
+check('writer round-trip: record(1) active', $rt->record(1)->getBool('active') === false);
+
+// fromRecords convenience
+$data2 = Nxs\Writer::fromRecords(['id', 'name', 'value'],
+    [['id' => 10, 'name' => 'foo', 'value' => 1.5], ['id' => 20, 'name' => 'bar', 'value' => 2.5]]);
+$rt2 = new Nxs\Reader($data2);
+check('writer fromRecords: record count', $rt2->recordCount() === 2);
+check('writer fromRecords: record(1) name', $rt2->record(1)->getStr('name') === 'bar');
+
+// null field
+$wn = new Nxs\Writer(new Nxs\Schema(['a', 'b']));
+$wn->beginObject(); $wn->writeI64(0, 99); $wn->writeNull(1); $wn->endObject();
+$rtn = new Nxs\Reader($wn->finish());
+check('writer null field: a == 99', $rtn->record(0)->getI64('a') === 99);
+
+// bool fields
+$wb = new Nxs\Writer(new Nxs\Schema(['flag']));
+$wb->beginObject(); $wb->writeBool(0, true);  $wb->endObject();
+$wb->beginObject(); $wb->writeBool(0, false); $wb->endObject();
+$rtb = new Nxs\Reader($wb->finish());
+check('writer bool: record(0) true',  $rtb->record(0)->getBool('flag') === true);
+check('writer bool: record(1) false', $rtb->record(1)->getBool('flag') === false);
+
+// unicode string
+$wu = new Nxs\Writer(new Nxs\Schema(['msg']));
+$wu->beginObject(); $wu->writeStr(0, 'héllo wörld'); $wu->endObject();
+$rtu = new Nxs\Reader($wu->finish());
+check('writer unicode string', $rtu->record(0)->getStr('msg') === 'héllo wörld');
+
+// many fields (>7, multi-byte bitmask)
+$keys = array_map(fn($i) => "f$i", range(0, 8));
+$wm = new Nxs\Writer(new Nxs\Schema($keys));
+$wm->beginObject();
+foreach ($keys as $i => $_) { $wm->writeI64($i, $i * 100); }
+$wm->endObject();
+$rtm = new Nxs\Reader($wm->finish());
+$manyOk = true;
+foreach ($keys as $i => $k) { if ($rtm->record(0)->getI64($k) !== $i * 100) { $manyOk = false; break; } }
+check('writer many fields (multi-byte bitmask)', $manyOk);
+
 // ── Security tests ───────────────────────────────────────────────────────────
 
 $badMagic = $nxbBytes;

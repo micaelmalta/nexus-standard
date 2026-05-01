@@ -92,6 +92,84 @@ fun main(args: Array<String>) {
     val mx = r.maxF64("score")
     check("min_f64 <= max_f64", mn != null && mx != null && mn <= mx)
 
+    // ── Writer round-trip tests ────────────────────────────────────────────
+
+    println("\nNXS Kotlin Writer — Tests\n")
+
+    // 3-record round-trip
+    run {
+        val schema = NxsSchema(listOf("id", "username", "score", "active"))
+        val w = NxsWriter(schema)
+        val recs = listOf(
+            Triple(Triple(1L, "alice", 9.5), true, Unit),
+            Triple(Triple(2L, "bob", 7.2), false, Unit),
+            Triple(Triple(3L, "carol", 8.8), true, Unit),
+        )
+        for ((kv, active, _) in recs) {
+            val (id, name, score) = kv
+            w.beginObject()
+            w.writeI64(0, id); w.writeStr(1, name); w.writeF64(2, score); w.writeBool(3, active)
+            w.endObject()
+        }
+        val rt = NxsReader(w.finish())
+        check("writer round-trip: record count", rt.recordCount == 3)
+        check("writer round-trip: record(0) id", rt.record(0).getI64("id") == 1L)
+        check("writer round-trip: record(1) username", rt.record(1).getStr("username") == "bob")
+        check("writer round-trip: record(2) score", abs(rt.record(2).getF64("score") - 8.8) < 1e-9)
+        check("writer round-trip: record(0) active", rt.record(0).getBool("active") == true)
+        check("writer round-trip: record(1) active", rt.record(1).getBool("active") == false)
+    }
+
+    // fromRecords convenience
+    run {
+        val bytes2 = NxsWriter.fromRecords(
+            listOf("id", "name", "value"),
+            listOf(mapOf("id" to 10L, "name" to "foo", "value" to 1.5),
+                   mapOf("id" to 20L, "name" to "bar", "value" to 2.5))
+        )
+        val rt2 = NxsReader(bytes2)
+        check("writer fromRecords: record count", rt2.recordCount == 2)
+        check("writer fromRecords: record(1) name", rt2.record(1).getStr("name") == "bar")
+    }
+
+    // null field
+    run {
+        val wn = NxsWriter(NxsSchema(listOf("a", "b")))
+        wn.beginObject(); wn.writeI64(0, 99); wn.writeNull(1); wn.endObject()
+        val rtn = NxsReader(wn.finish())
+        check("writer null field: a == 99", rtn.record(0).getI64("a") == 99L)
+    }
+
+    // bool fields
+    run {
+        val wb = NxsWriter(NxsSchema(listOf("flag")))
+        wb.beginObject(); wb.writeBool(0, true);  wb.endObject()
+        wb.beginObject(); wb.writeBool(0, false); wb.endObject()
+        val rtb = NxsReader(wb.finish())
+        check("writer bool: record(0) true",  rtb.record(0).getBool("flag") == true)
+        check("writer bool: record(1) false", rtb.record(1).getBool("flag") == false)
+    }
+
+    // unicode string
+    run {
+        val wu = NxsWriter(NxsSchema(listOf("msg")))
+        wu.beginObject(); wu.writeStr(0, "héllo wörld"); wu.endObject()
+        val rtu = NxsReader(wu.finish())
+        check("writer unicode string", rtu.record(0).getStr("msg") == "héllo wörld")
+    }
+
+    // many fields (>7 — multi-byte bitmask)
+    run {
+        val keys = (0..8).map { "f$it" }
+        val wm = NxsWriter(NxsSchema(keys))
+        wm.beginObject()
+        keys.indices.forEach { i -> wm.writeI64(i, (i * 100).toLong()) }
+        wm.endObject()
+        val rtm = NxsReader(wm.finish())
+        val allOk = keys.indices.all { i -> rtm.record(0).getI64(keys[i]) == (i * 100).toLong() }
+        check("writer many fields (multi-byte bitmask)", allOk)
+    }
+
     println("\n$passed passed, $failed failed\n")
     if (failed > 0) System.exit(1)
 }

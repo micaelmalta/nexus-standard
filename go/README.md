@@ -62,6 +62,30 @@ ages   := r.SumI64Fast("age")
 
 At 1M records, `SumF64Fast` runs in ~10.9 ms vs ~1.05 s for `json.Unmarshal` (~105× faster).
 
+## Write a file
+
+```go
+import "github.com/micaelmalta/nxs/go"
+
+schema := nxs.NewSchema([]string{"id", "username", "score", "active"})
+w := nxs.NewWriter(schema)
+
+w.BeginObject()
+w.WriteI64(0, 42)
+w.WriteStr(1, "alice")
+w.WriteF64(2, 9.5)
+w.WriteBool(3, true)
+w.EndObject()
+
+bytes := w.Finish()   // []byte
+
+// Convenience: write from a slice of maps
+bytes2 := nxs.WriterFromRecords(
+    []string{"id", "username", "score"},
+    []map[string]any{{"id": int64(1), "username": "bob", "score": 8.2}},
+)
+```
+
 ## Tests
 
 ```bash
@@ -87,6 +111,7 @@ cargo run --release --bin gen_fixtures -- ../js/fixtures 1000000
 | :--- | :--- |
 | `nxs.go` | Reader, schema parsing, tail-index, field accessors |
 | `fast.go` | Uniform-schema fast path and parallel reducers |
+| `writer.go` | `NxsWriter` / `NxsSchema` — direct binary writer |
 | `nxs_test.go` | Test suite |
 | `cmd/bench/main.go` | Benchmark binary |
 

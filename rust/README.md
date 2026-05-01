@@ -20,20 +20,21 @@ cargo build --release
 ./target/release/nxs data.nxs out.nxb   # explicit output path
 ```
 
-## Write `.nxb` directly (hot path)
+## Write `.nxb` directly
 
 For bulk generation — no source text round-trip:
 
 ```rust
 use nxs::writer::{NxsWriter, Schema, Slot};
 
-let schema = Schema::new(&["id", "username", "score"]);
+let schema = Schema::new(&["id", "username", "score", "active"]);
 let mut w = NxsWriter::with_capacity(&schema, records.len() * 128 + 256);
 for r in &records {
     w.begin_object();
     w.write_i64(Slot(0), r.id);
     w.write_str(Slot(1), &r.username);
     w.write_f64(Slot(2), r.score);
+    w.write_bool(Slot(3), r.active);
     w.end_object();
 }
 let bytes: Vec<u8> = w.finish();

@@ -72,5 +72,76 @@ do {
     failed += 1
 }
 
+// ── Writer round-trip tests ────────────────────────────────────────────────
+
+print("\nNXS Swift Writer — Tests\n")
+
+do {
+    // 3-record round-trip
+    let schema = NXSSchema(keys: ["id", "username", "score", "active"])
+    let w = NXSWriter(schema: schema)
+    let recs: [(Int64, String, Double, Bool)] = [(1, "alice", 9.5, true), (2, "bob", 7.2, false), (3, "carol", 8.8, true)]
+    for (id, name, score, active) in recs {
+        w.beginObject()
+        w.writeI64(slot: 0, value: id)
+        w.writeStr(slot: 1, value: name)
+        w.writeF64(slot: 2, value: score)
+        w.writeBool(slot: 3, value: active)
+        w.endObject()
+    }
+    let rt = try NXSReader(Data(w.finish()))
+    check("writer round-trip: record count", rt.recordCount == 3)
+    let o0 = try rt.record(0)
+    check("writer round-trip: record(0) id", (try? o0.getI64("id")) == 1)
+    let o1 = try rt.record(1)
+    check("writer round-trip: record(1) username", (try? o1.getStr("username")) == "bob")
+    let o2 = try rt.record(2)
+    check("writer round-trip: record(2) score", abs(((try? o2.getF64("score")) ?? 0) - 8.8) < 1e-9)
+    check("writer round-trip: record(0) active", (try? o0.getBool("active")) == true)
+    check("writer round-trip: record(1) active", (try? o1.getBool("active")) == false)
+
+    // fromRecords convenience
+    let bytes2 = NXSWriter.fromRecords(keys: ["id", "name", "value"],
+        records: [["id": 10, "name": "foo", "value": 1.5], ["id": 20, "name": "bar", "value": 2.5]])
+    let rt2 = try NXSReader(Data(bytes2))
+    check("writer fromRecords: record count", rt2.recordCount == 2)
+    check("writer fromRecords: record(1) name", (try? (try rt2.record(1)).getStr("name")) == "bar")
+
+    // null field
+    let wn = NXSWriter(schema: NXSSchema(keys: ["a", "b"]))
+    wn.beginObject(); wn.writeI64(slot: 0, value: 99); wn.writeNull(slot: 1); wn.endObject()
+    let rtn = try NXSReader(Data(wn.finish()))
+    check("writer null field: a == 99", (try? (try rtn.record(0)).getI64("a")) == 99)
+
+    // bool fields
+    let wb = NXSWriter(schema: NXSSchema(keys: ["flag"]))
+    wb.beginObject(); wb.writeBool(slot: 0, value: true);  wb.endObject()
+    wb.beginObject(); wb.writeBool(slot: 0, value: false); wb.endObject()
+    let rtb = try NXSReader(Data(wb.finish()))
+    check("writer bool: record(0) true",  (try? (try rtb.record(0)).getBool("flag")) == true)
+    check("writer bool: record(1) false", (try? (try rtb.record(1)).getBool("flag")) == false)
+
+    // unicode string
+    let wu = NXSWriter(schema: NXSSchema(keys: ["msg"]))
+    wu.beginObject(); wu.writeStr(slot: 0, value: "héllo wörld"); wu.endObject()
+    let rtu = try NXSReader(Data(wu.finish()))
+    check("writer unicode string", (try? (try rtu.record(0)).getStr("msg")) == "héllo wörld")
+
+    // many fields (>7 — multi-byte bitmask)
+    let manyKeys = (0..<9).map { "f\($0)" }
+    let wm = NXSWriter(schema: NXSSchema(keys: manyKeys))
+    wm.beginObject()
+    for i in 0..<9 { wm.writeI64(slot: i, value: Int64(i * 100)) }
+    wm.endObject()
+    let rtm = try NXSReader(Data(wm.finish()))
+    let o0m = try rtm.record(0)
+    let manyOk = (0..<9).allSatisfy { i in (try? o0m.getI64(manyKeys[i])) == Int64(i * 100) }
+    check("writer many fields (multi-byte bitmask)", manyOk)
+
+} catch {
+    print("  ✗ writer fatal: \(error)")
+    failed += 1
+}
+
 print("\n\(passed) passed, \(failed) failed\n")
 exit(failed > 0 ? 1 : 0)
