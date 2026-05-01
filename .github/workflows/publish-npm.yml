@@ -49,8 +49,16 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Smoke test (install from registry)
+        # Wait out npm's index propagation (can lag ~30-60s after publish).
         run: |
           mkdir /tmp/smoke-npm && cd /tmp/smoke-npm
           npm init -y
-          npm install @micaelmalta/nexus-standard
+          for i in 1 2 3 4 5 6; do
+            if npm install @micaelmalta/nexus-standard; then
+              ok=1; break
+            fi
+            echo "registry not ready yet (attempt $i), sleeping 20s"
+            sleep 20
+          done
+          [ "${ok:-0}" = "1" ] || { echo '::error::npm install failed after retries'; exit 1; }
           node -e "import('@micaelmalta/nexus-standard').then(m => { console.log('ok', Object.keys(m)) })"
