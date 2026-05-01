@@ -320,14 +320,16 @@ pub fn emit<R: Read, W: Write>(
                         // Non-integer time values omitted; avoids wrong-type blob.
                     }
                     b'<' => {
-                        if let Ok(bytes) = (0..value.len())
-                            .step_by(2)
-                            .map(|i| u8::from_str_radix(value.get(i..i + 2).unwrap_or("??"), 16))
-                            .collect::<std::result::Result<Vec<u8>, _>>()
-                        {
-                            nxs_writer.write_bytes(slot, &bytes);
+                        if value.len() % 2 == 0 {
+                            if let Ok(bytes) = (0..value.len())
+                                .step_by(2)
+                                .map(|i| u8::from_str_radix(&value[i..i + 2], 16))
+                                .collect::<std::result::Result<Vec<u8>, _>>()
+                            {
+                                nxs_writer.write_bytes(slot, &bytes);
+                            }
                         }
-                        // Hex decode failure: omit rather than write wrong type.
+                        // Odd-length or invalid hex: omit rather than write wrong type.
                     }
                     b'^' => {
                         // null: key stays absent

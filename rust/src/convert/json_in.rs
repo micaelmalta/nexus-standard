@@ -153,14 +153,15 @@ pub fn emit<R: Read, W: Write>(
                         }
                     }
                     b'<' => {
-                        // Hex-encoded binary. Omit on any decode error to avoid
-                        // writing a string blob into a binary-typed slot.
-                        if let Ok(bytes) = (0..value.len())
-                            .step_by(2)
-                            .map(|i| u8::from_str_radix(value.get(i..i + 2).unwrap_or("??"), 16))
-                            .collect::<std::result::Result<Vec<u8>, _>>()
-                        {
-                            nxs_writer.write_bytes(slot, &bytes);
+                        // Odd-length or invalid hex: omit rather than write wrong type.
+                        if value.len() % 2 == 0 {
+                            if let Ok(bytes) = (0..value.len())
+                                .step_by(2)
+                                .map(|i| u8::from_str_radix(&value[i..i + 2], 16))
+                                .collect::<std::result::Result<Vec<u8>, _>>()
+                            {
+                                nxs_writer.write_bytes(slot, &bytes);
+                            }
                         }
                     }
                     b'^' => {
