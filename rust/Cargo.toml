@@ -66,6 +66,10 @@ path = "tests/convert/exit_codes.rs"
 name = "json_import"
 path = "tests/convert/json_import.rs"
 
+[[test]]
+name = "e2e"
+path = "tests/convert/e2e.rs"
+
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"

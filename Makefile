@@ -258,3 +258,18 @@ fuzz:
 	cd rust && cargo +nightly fuzz run fuzz_decode -- -max_total_time=$(FUZZ_TIME) -rss_limit_mb=0 -max_len=8192
 	cd rust && cargo +nightly fuzz run fuzz_writer_roundtrip -- -max_total_time=$(FUZZ_TIME) -rss_limit_mb=0 -max_len=4096
 	@echo "✅  Fuzz complete — no crashes found."
+
+convert-test:
+	@echo "Running converter suite tests..."
+	cd rust && cargo test --test e2e --test exit_codes --test json_import
+	@echo "✅  Converter tests passed."
+
+convert-demo:
+	@echo "Running converter demo: JSON → .nxb → inspect → export"
+	cd rust && cargo build --release --bin nxs-import --bin nxs-export --bin nxs-inspect 2>/dev/null
+	echo '[{"id":1,"name":"alice","score":9.5},{"id":2,"name":"bob","score":8.1}]' \
+	  | ./rust/target/release/nxs-import --from json - /tmp/nxs_demo.nxb
+	./rust/target/release/nxs-inspect /tmp/nxs_demo.nxb
+	./rust/target/release/nxs-export --to json --pretty /tmp/nxs_demo.nxb
+	rm -f /tmp/nxs_demo.nxb
+	@echo "✅  Demo complete."
