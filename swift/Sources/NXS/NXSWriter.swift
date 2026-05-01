@@ -24,7 +24,7 @@ import Foundation
 private func murmur3_64(_ data: [UInt8]) -> UInt64 {
     let C1: UInt64 = 0xFF51AFD7ED558CCD
     let C2: UInt64 = 0xC4CEB9FE1A85EC53
-    var h:  UInt64 = 0x93681D6255313A99
+    var h: UInt64 = 0x93681D6255313A99
     let len = data.count
     var i = 0
     while i < len {

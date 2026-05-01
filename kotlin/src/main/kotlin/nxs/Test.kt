@@ -108,7 +108,10 @@ fun main(args: Array<String>) {
         for ((kv, active, _) in recs) {
             val (id, name, score) = kv
             w.beginObject()
-            w.writeI64(0, id); w.writeStr(1, name); w.writeF64(2, score); w.writeBool(3, active)
+            w.writeI64(0, id)
+            w.writeStr(1, name)
+            w.writeF64(2, score)
+            w.writeBool(3, active)
             w.endObject()
         }
         val rt = NxsReader(w.finish())
@@ -124,8 +127,10 @@ fun main(args: Array<String>) {
     run {
         val bytes2 = NxsWriter.fromRecords(
             listOf("id", "name", "value"),
-            listOf(mapOf("id" to 10L, "name" to "foo", "value" to 1.5),
-                   mapOf("id" to 20L, "name" to "bar", "value" to 2.5))
+            listOf(
+                mapOf("id" to 10L, "name" to "foo", "value" to 1.5),
+                mapOf("id" to 20L, "name" to "bar", "value" to 2.5),
+            ),
         )
         val rt2 = NxsReader(bytes2)
         check("writer fromRecords: record count", rt2.recordCount == 2)
@@ -135,7 +140,10 @@ fun main(args: Array<String>) {
     // null field
     run {
         val wn = NxsWriter(NxsSchema(listOf("a", "b")))
-        wn.beginObject(); wn.writeI64(0, 99); wn.writeNull(1); wn.endObject()
+        wn.beginObject()
+        wn.writeI64(0, 99)
+        wn.writeNull(1)
+        wn.endObject()
         val rtn = NxsReader(wn.finish())
         check("writer null field: a == 99", rtn.record(0).getI64("a") == 99L)
     }
@@ -143,17 +151,23 @@ fun main(args: Array<String>) {
     // bool fields
     run {
         val wb = NxsWriter(NxsSchema(listOf("flag")))
-        wb.beginObject(); wb.writeBool(0, true);  wb.endObject()
-        wb.beginObject(); wb.writeBool(0, false); wb.endObject()
+        wb.beginObject()
+        wb.writeBool(0, true)
+        wb.endObject()
+        wb.beginObject()
+        wb.writeBool(0, false)
+        wb.endObject()
         val rtb = NxsReader(wb.finish())
-        check("writer bool: record(0) true",  rtb.record(0).getBool("flag") == true)
+        check("writer bool: record(0) true", rtb.record(0).getBool("flag") == true)
         check("writer bool: record(1) false", rtb.record(1).getBool("flag") == false)
     }
 
     // unicode string
     run {
         val wu = NxsWriter(NxsSchema(listOf("msg")))
-        wu.beginObject(); wu.writeStr(0, "héllo wörld"); wu.endObject()
+        wu.beginObject()
+        wu.writeStr(0, "héllo wörld")
+        wu.endObject()
         val rtu = NxsReader(wu.finish())
         check("writer unicode string", rtu.record(0).getStr("msg") == "héllo wörld")
     }

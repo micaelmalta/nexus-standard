@@ -151,20 +151,20 @@ namespace Nxs
             if (_frames.Count != 0) throw new InvalidOperationException("unclosed objects");
 
             byte[] schemaBytes = BuildSchemaBytes();
-            ulong dictHash     = Murmur3.Hash64(schemaBytes);
-            int dataStart      = 32 + schemaBytes.Length;
-            byte[] dataSector  = _buf.ToArray();
-            ulong tailPtr      = (ulong)(dataStart + dataSector.Length);
-            byte[] tail        = BuildTailIndex(dataStart);
+            ulong dictHash = Murmur3.Hash64(schemaBytes);
+            int dataStart = 32 + schemaBytes.Length;
+            byte[] dataSector = _buf.ToArray();
+            ulong tailPtr = (ulong)(dataStart + dataSector.Length);
+            byte[] tail = BuildTailIndex(dataStart);
 
             using var out_ = new MemoryStream(32 + schemaBytes.Length + dataSector.Length + tail.Length);
             Span<byte> tmp = stackalloc byte[8];
 
             BinaryPrimitives.WriteUInt32LittleEndian(tmp, 0x4E585342u); out_.Write(tmp[..4]); // NXSB
-            BinaryPrimitives.WriteUInt16LittleEndian(tmp, 0x0100);      out_.Write(tmp[..2]); // VERSION
-            BinaryPrimitives.WriteUInt16LittleEndian(tmp, 0x0002);      out_.Write(tmp[..2]); // FLAG_SCHEMA
-            BinaryPrimitives.WriteUInt64LittleEndian(tmp, dictHash);    out_.Write(tmp);
-            BinaryPrimitives.WriteUInt64LittleEndian(tmp, tailPtr);     out_.Write(tmp);
+            BinaryPrimitives.WriteUInt16LittleEndian(tmp, 0x0100); out_.Write(tmp[..2]); // VERSION
+            BinaryPrimitives.WriteUInt16LittleEndian(tmp, 0x0002); out_.Write(tmp[..2]); // FLAG_SCHEMA
+            BinaryPrimitives.WriteUInt64LittleEndian(tmp, dictHash); out_.Write(tmp);
+            BinaryPrimitives.WriteUInt64LittleEndian(tmp, tailPtr); out_.Write(tmp);
             out_.Write(new byte[8]); // reserved
 
             out_.Write(schemaBytes);
@@ -262,9 +262,9 @@ namespace Nxs
                     if (!rec.TryGetValue(keys[i], out var val)) continue;
                     switch (val)
                     {
-                        case null:    w.WriteNull(i); break;
-                        case bool b:  w.WriteBool(i, b); break;
-                        case int iv:  w.WriteI64(i, iv); break;
+                        case null: w.WriteNull(i); break;
+                        case bool b: w.WriteBool(i, b); break;
+                        case int iv: w.WriteI64(i, iv); break;
                         case long lv: w.WriteI64(i, lv); break;
                         case float fv: w.WriteF64(i, fv); break;
                         case double dv: w.WriteF64(i, dv); break;

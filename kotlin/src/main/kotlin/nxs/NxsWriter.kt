@@ -1,44 +1,52 @@
 package nxs
 
-// NXS Writer — direct-to-buffer .nxb emitter for Kotlin/JVM.
-//
-// Mirrors the Rust NxsWriter API:
-//   NxsSchema — precompile keys once; share across NxsWriter instances.
-//   NxsWriter — slot-based hot path; no per-key map lookups during write.
-//
-// Usage:
-//   val schema = NxsSchema(listOf("id", "username", "score", "active"))
-//   val w = NxsWriter(schema)
-//   w.beginObject()
-//   w.writeI64(0, 42L)
-//   w.writeStr(1, "alice")
-//   w.writeF64(2, 9.5)
-//   w.writeBool(3, true)
-//   w.endObject()
-//   val bytes: ByteArray = w.finish()
-
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+
+/**
+ * NXS Writer — direct-to-buffer .nxb emitter for Kotlin/JVM.
+ *
+ * Mirrors the Rust NxsWriter API:
+ * - [NxsSchema] — precompile keys once; share across [NxsWriter] instances.
+ * - [NxsWriter] — slot-based hot path; no per-key map lookups during write.
+ *
+ * Usage:
+ * ```
+ * val schema = NxsSchema(listOf("id", "username", "score", "active"))
+ * val w = NxsWriter(schema)
+ * w.beginObject()
+ * w.writeI64(0, 42L)
+ * w.writeStr(1, "alice")
+ * w.writeF64(2, 9.5)
+ * w.writeBool(3, true)
+ * w.endObject()
+ * val bytes: ByteArray = w.finish()
+ * ```
+ */
 
 // ── MurmurHash3-64 ────────────────────────────────────────────────────────────
 
 private fun murmur3_64(data: ByteArray): Long {
-    val C1 = -0xAE502812AA7333L        // 0xFF51AFD7ED558CCD as Long
-    val C2 = -0x3B314601E57A13ADL      // 0xC4CEB9FE1A85EC53 as Long
-    var h  = -0x6C97E29DAACEC567L      // 0x93681D6255313A99 as Long
+    val C1 = -0xAE502812AA7333L // 0xFF51AFD7ED558CCD as Long
+    val C2 = -0x3B314601E57A13ADL // 0xC4CEB9FE1A85EC53 as Long
+    var h = -0x6C97E29DAACEC567L // 0x93681D6255313A99 as Long
     val len = data.size
     var i = 0
     while (i < len) {
         var k = 0L
-        for (b in 0..7) { if (i + b < len) k = k or ((data[i + b].toLong() and 0xFF) shl (b * 8)) }
-        k = k * C1; k = k xor (k ushr 33)
+        for (b in 0..7) {
+            if (i + b < len) k = k or ((data[i + b].toLong() and 0xFF) shl (b * 8))
+        }
+        k *= C1
+        k = k xor (k ushr 33)
         h = h xor k
-        h = h * C2; h = h xor (h ushr 33)
+        h *= C2
+        h = h xor (h ushr 33)
         i += 8
     }
-    h = h xor len.toLong(); h = h xor (h ushr 33)
-    h = h * C1;              h = h xor (h ushr 33)
+    h = h xor len.toLong()
+    h = h xor (h ushr 33)
+    h *= C1
+    h = h xor (h ushr 33)
     return h
 }
 
@@ -122,17 +130,24 @@ class NxsWriter(private val schema: NxsSchema) {
         check(frames.isEmpty()) { "unclosed objects" }
 
         val schemaBytes = buildSchemaBytes()
-        val dictHash    = murmur3_64(schemaBytes)
-        val dataStart   = 32 + schemaBytes.size
-        val dataSector  = buf.toByteArray()
-        val tailPtr     = (dataStart + dataSector.size).toLong()
-        val tail        = buildTailIndex(dataStart)
+        val dictHash = murmur3_64(schemaBytes)
+        val dataStart = 32 + schemaBytes.size
+        val dataSector = buf.toByteArray()
+        val tailPtr = (dataStart + dataSector.size).toLong()
+        val tail = buildTailIndex(dataStart)
 
         val out = ByteArrayOutputStream(32 + schemaBytes.size + dataSector.size + tail.size)
 
-        fun u32(v: Int)  { out.write(v and 0xFF); out.write((v shr 8) and 0xFF)
-                           out.write((v shr 16) and 0xFF); out.write((v shr 24) and 0xFF) }
-        fun u16(v: Int)  { out.write(v and 0xFF); out.write((v shr 8) and 0xFF) }
+        fun u32(v: Int) {
+            out.write(v and 0xFF)
+            out.write((v shr 8) and 0xFF)
+            out.write((v shr 16) and 0xFF)
+            out.write((v shr 24) and 0xFF)
+        }
+        fun u16(v: Int) {
+            out.write(v and 0xFF)
+            out.write((v shr 8) and 0xFF)
+        }
         fun u64(v: Long) { for (i in 0..7) out.write(((v shr (i * 8)) and 0xFF).toInt()) }
 
         u32(0x4E585342)         // NXSB
@@ -192,7 +207,8 @@ class NxsWriter(private val schema: NxsSchema) {
     fun writeListI64(slot: Int, values: LongArray) {
         markSlot(slot)
         val total = 16 + values.size * 8
-        writeU32(0x4E58534C); writeU32(total)
+        writeU32(0x4E58534C)
+        writeU32(total)
         buf.write(0x3D)                        // '=' sigil
         writeU32(values.size)
         repeat(3) { buf.write(0) }
@@ -202,7 +218,8 @@ class NxsWriter(private val schema: NxsSchema) {
     fun writeListF64(slot: Int, values: DoubleArray) {
         markSlot(slot)
         val total = 16 + values.size * 8
-        writeU32(0x4E58534C); writeU32(total)
+        writeU32(0x4E58534C)
+        writeU32(total)
         buf.write(0x7E)                        // '~' sigil
         writeU32(values.size)
         repeat(3) { buf.write(0) }
@@ -219,14 +236,14 @@ class NxsWriter(private val schema: NxsSchema) {
                 for ((i, key) in keys.withIndex()) {
                     if (!rec.containsKey(key)) continue
                     when (val v = rec[key]) {
-                        null          -> w.writeNull(i)
-                        is Boolean    -> w.writeBool(i, v)
-                        is Int        -> w.writeI64(i, v.toLong())
-                        is Long       -> w.writeI64(i, v)
-                        is Float      -> w.writeF64(i, v.toDouble())
-                        is Double     -> w.writeF64(i, v)
-                        is String     -> w.writeStr(i, v)
-                        is ByteArray  -> w.writeBytes(i, v)
+                        null -> w.writeNull(i)
+                        is Boolean -> w.writeBool(i, v)
+                        is Int -> w.writeI64(i, v.toLong())
+                        is Long -> w.writeI64(i, v)
+                        is Float -> w.writeF64(i, v.toDouble())
+                        is Double -> w.writeF64(i, v)
+                        is String -> w.writeStr(i, v)
+                        is ByteArray -> w.writeBytes(i, v)
                     }
                 }
                 w.endObject()
@@ -249,8 +266,10 @@ class NxsWriter(private val schema: NxsSchema) {
     }
 
     private fun writeU32(v: Int) {
-        buf.write(v and 0xFF); buf.write((v shr 8) and 0xFF)
-        buf.write((v shr 16) and 0xFF); buf.write((v shr 24) and 0xFF)
+        buf.write(v and 0xFF)
+        buf.write((v shr 8) and 0xFF)
+        buf.write((v shr 16) and 0xFF)
+        buf.write((v shr 24) and 0xFF)
     }
 
     private fun writeRawI64(v: Long) {
@@ -258,40 +277,53 @@ class NxsWriter(private val schema: NxsSchema) {
     }
 
     private fun putU32(arr: ByteArray, off: Int, v: Int) {
-        arr[off]     = (v and 0xFF).toByte()
+        arr[off] = (v and 0xFF).toByte()
         arr[off + 1] = ((v shr 8) and 0xFF).toByte()
         arr[off + 2] = ((v shr 16) and 0xFF).toByte()
         arr[off + 3] = ((v shr 24) and 0xFF).toByte()
     }
 
     private fun putU16(arr: ByteArray, off: Int, v: Int) {
-        arr[off]     = (v and 0xFF).toByte()
+        arr[off] = (v and 0xFF).toByte()
         arr[off + 1] = ((v shr 8) and 0xFF).toByte()
     }
 
     private fun buildSchemaBytes(): ByteArray {
-        val n      = schema.count
-        val utf8   = schema.keys.map { it.toByteArray(Charsets.UTF_8) }
-        var size   = 2 + n + utf8.sumOf { it.size + 1 }
-        val pad    = (8 - size % 8) % 8
-        size      += pad
+        val n = schema.count
+        val utf8 = schema.keys.map { it.toByteArray(Charsets.UTF_8) }
+        var size = 2 + n + utf8.sumOf { it.size + 1 }
+        val pad = (8 - size % 8) % 8
+        size += pad
 
         val b = ByteArray(size)
         var p = 0
         b[p++] = (n and 0xFF).toByte()
         b[p++] = ((n shr 8) and 0xFF).toByte()
         repeat(n) { b[p++] = 0x22 }  // '"' sigil
-        for (e in utf8) { e.copyInto(b, p); p += e.size; b[p++] = 0 }
+        for (e in utf8) {
+            e.copyInto(b, p)
+            p += e.size
+            b[p++] = 0
+        }
         return b
     }
 
     private fun buildTailIndex(dataStart: Int): ByteArray {
-        val nr  = recordOffsets.size
+        val nr = recordOffsets.size
         val out = ByteArrayOutputStream(4 + nr * 10 + 8)
-        fun u32(v: Int)  { out.write(v and 0xFF); out.write((v shr 8) and 0xFF)
-                           out.write((v shr 16) and 0xFF); out.write((v shr 24) and 0xFF) }
-        fun u64(v: Long) { for (i in 0..7) out.write(((v ushr (i * 8)) and 0xFF).toInt()) }
-        fun u16(v: Int)  { out.write(v and 0xFF); out.write((v shr 8) and 0xFF) }
+        fun u32(v: Int) {
+            out.write(v and 0xFF)
+            out.write((v shr 8) and 0xFF)
+            out.write((v shr 16) and 0xFF)
+            out.write((v shr 24) and 0xFF)
+        }
+        fun u64(v: Long) {
+            for (i in 0..7) out.write(((v ushr (i * 8)) and 0xFF).toInt())
+        }
+        fun u16(v: Int) {
+            out.write(v and 0xFF)
+            out.write((v shr 8) and 0xFF)
+        }
 
         u32(nr)
         for ((i, rel) in recordOffsets.withIndex()) {

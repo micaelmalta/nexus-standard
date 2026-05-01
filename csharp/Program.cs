@@ -126,10 +126,10 @@ Console.WriteLine("\nNXS C# Writer — Tests\n");
 // bool fields
 {
     var wb = new NxsWriter(new NxsSchema(["flag"]));
-    wb.BeginObject(); wb.WriteBool(0, true);  wb.EndObject();
+    wb.BeginObject(); wb.WriteBool(0, true); wb.EndObject();
     wb.BeginObject(); wb.WriteBool(0, false); wb.EndObject();
     var rtb = new NxsReader(wb.Finish());
-    Check("writer bool: record(0) true",  rtb.Record(0).GetBool("flag") == true);
+    Check("writer bool: record(0) true", rtb.Record(0).GetBool("flag") == true);
     Check("writer bool: record(1) false", rtb.Record(1).GetBool("flag") == false);
 }
 
@@ -143,7 +143,7 @@ Console.WriteLine("\nNXS C# Writer — Tests\n");
 
 // many fields (>7 — multi-byte bitmask)
 {
-    string[] keys = ["f0","f1","f2","f3","f4","f5","f6","f7","f8"];
+    string[] keys = ["f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"];
     var wm = new NxsWriter(new NxsSchema(keys));
     wm.BeginObject();
     for (int i = 0; i < keys.Length; i++) wm.WriteI64(i, (long)(i * 100));

@@ -149,7 +149,10 @@ puts
     recs = [[1, 'alice', 9.5, true], [2, 'bob', 7.2, false], [3, 'carol', 8.8, true]]
     recs.each do |(id, name, score, active)|
       w.begin_object
-      w.write_i64(0, id); w.write_str(1, name); w.write_f64(2, score); w.write_bool(3, active)
+      w.write_i64(0, id)
+      w.write_str(1, name)
+      w.write_f64(2, score)
+      w.write_bool(3, active)
       w.end_object
     end
     r = Nxs::Reader.new(w.finish)
@@ -174,7 +177,10 @@ puts
   check('writer null field') do
     schema = Nxs::Schema.new(%w[a b])
     w = Nxs::Writer.new(schema)
-    w.begin_object; w.write_i64(0, 99); w.write_null(1); w.end_object
+    w.begin_object
+    w.write_i64(0, 99)
+    w.write_null(1)
+    w.end_object
     r = Nxs::Reader.new(w.finish)
     r.record(0).get_i64('a') == 99
   end,
@@ -182,8 +188,12 @@ puts
   check('writer bool fields') do
     schema = Nxs::Schema.new(['flag'])
     w = Nxs::Writer.new(schema)
-    w.begin_object; w.write_bool(0, true);  w.end_object
-    w.begin_object; w.write_bool(0, false); w.end_object
+    w.begin_object
+    w.write_bool(0, true)
+    w.end_object
+    w.begin_object
+    w.write_bool(0, false)
+    w.end_object
     r = Nxs::Reader.new(w.finish)
     r.record(0).get_bool('flag') == true && r.record(1).get_bool('flag') == false
   end,
@@ -191,7 +201,9 @@ puts
   check('writer unicode string') do
     schema = Nxs::Schema.new(['msg'])
     w = Nxs::Writer.new(schema)
-    w.begin_object; w.write_str(0, 'héllo wörld'); w.end_object
+    w.begin_object
+    w.write_str(0, 'héllo wörld')
+    w.end_object
     r = Nxs::Reader.new(w.finish)
     r.record(0).get_str('msg') == 'héllo wörld'
   end,
@@ -205,7 +217,7 @@ puts
     w.end_object
     r = Nxs::Reader.new(w.finish)
     keys.each_with_index.all? { |k, i| r.record(0).get_i64(k) == i * 100 }
-  end,
+  end
 
 ].each { |r| r ? (passes += 1) : (fails += 1) }
 
