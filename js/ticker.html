@@ -27,7 +27,24 @@
   }
   .sub {
     color: var(--muted);
-    margin: 0 0 32px;
+    margin: 0 0 12px;
+  }
+  .what-tested {
+    margin: 0 0 24px;
+    padding: 14px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .what-tested strong:first-child {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
   }
   .controls {
     display: flex;
@@ -204,6 +221,11 @@
 <main>
   <h1>NXS vs JSON — Live Ticker</h1>
   <p class="sub">A 60 FPS rAF loop updates record 0's <code>score</code> every frame, on both paths. JSON path re-parses the whole array every K frames (simulating a server push). NXS patches 8 bytes in place. Watch the sparkline.</p>
+
+  <section class="what-tested" aria-label="What this page tests">
+    <strong>What this page tests</strong>
+    Main-thread frame budgeting under a continuous <code>requestAnimationFrame</code> loop. Both columns update the same logical field (<code>record[0].score</code>) each frame; <strong>pressure</strong> repeats that work multiple times per frame. The JSON column mutates a parsed array and, every <em>K</em> frames, <code>JSON.stringify</code>s and <code>JSON.parse</code>s the full ~15&nbsp;MB document (simulating a replaced server payload). The NXS column writes via <code>DataView.setFloat64</code> at a cached byte offset into mapped <code>.nxb</code> bytes — no per-frame allocations. The stats and sparklines show FPS, per-path work time, and frames over a 20&nbsp;ms budget; the <strong>Long tasks</strong> panel lists browser <code>longtask</code> entries (&gt;50&nbsp;ms), which usually spike on the JSON path when re-parse aligns with rAF.
+  </section>
 
   <div class="controls">
     <button class="primary" id="run">Run</button>

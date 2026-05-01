@@ -27,7 +27,24 @@
   }
   .sub {
     color: var(--muted);
-    margin: 0 0 32px;
+    margin: 0 0 12px;
+  }
+  .what-tested {
+    margin: 0 0 24px;
+    padding: 14px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .what-tested strong:first-child {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
   }
   .controls {
     display: flex;
@@ -194,6 +211,11 @@
 <main>
   <h1>NXS vs JSON vs CSV — Browser Benchmark</h1>
   <p class="sub">The same fixtures used in the Node and Go benches, run in your browser over <code>fetch()</code>.</p>
+
+  <section class="what-tested" aria-label="What this page tests">
+    <strong>What this page tests</strong>
+    Five bar-chart workloads on the same record count, comparing JSON, CSV, and NXS side by side. (1) <strong>Open</strong> — <code>JSON.parse</code> / full CSV parse vs <code>new NxsReader</code> (header + tail-index only). (2) <strong>Warm random access</strong> — read <code>username</code> for a random record index. (3) <strong>Multi-field access</strong> — four fields per random record. (4) <strong>Cold pipeline</strong> — <code>fetch</code> + open + first field read. (5) <strong>Aggregate</strong> — sum <code>score</code> over all rows (including NXS WASM reducer when loaded). Use size presets or upload matching <code>.nxb</code> / <code>.json</code> / <code>.csv</code> files to substitute fixtures.
+  </section>
 
   <div class="controls">
     <div>

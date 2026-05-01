@@ -41,6 +41,24 @@
   .title-block p {
     margin: 0; color: var(--muted); font-size: 12px;
   }
+  .what-tested {
+    margin: 0 0 10px;
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .what-tested strong:first-child {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
   .drop-zone {
     flex: 1;
     display: flex;
@@ -285,6 +303,11 @@
       <div class="file-info" id="file-info"></div>
     </div>
   </header>
+
+  <section class="what-tested" aria-label="What this page tests">
+    <strong>What this page tests</strong>
+    UI scalability for a <strong>very large</strong> log-shaped dataset (millions of rows): a fixed <strong>row pool</strong> and a tall inner <strong>spacer</strong> with scroll scaling map viewport position to record indices without creating one DOM node per line. With <code>.nxb</code>, field reads use the binary tail-index for <strong>random access</strong> without holding a full JS object graph for every record. With <code>.json</code>, the file is parsed once into an array, then the same virtual list runs over that in-memory model (useful for comparison). Search, jump-to-line, and the status bar’s <strong>render</strong> timing show whether scrolling stays smooth under load.
+  </section>
 
   <div class="toolbar">
     <div class="search-wrap">

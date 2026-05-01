@@ -27,7 +27,24 @@
   }
   .sub {
     color: var(--muted);
-    margin: 0 0 20px;
+    margin: 0 0 12px;
+  }
+  .what-tested {
+    margin: 0 0 16px;
+    padding: 14px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .what-tested strong:first-child {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
   }
   code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
 
@@ -162,6 +179,11 @@
 <main>
   <h1>NXS vs JSON — Shared Workers</h1>
   <p class="sub">Spawn 4 Web Workers that all read from the same <code>SharedArrayBuffer</code>. No copies. One worker's write is visible to the others within one polling tick. JSON's alternative: ship a structured-cloned copy of the array to every worker.</p>
+
+  <section class="what-tested" aria-label="What this page tests">
+    <strong>What this page tests</strong>
+    Cost of giving <strong>four workers</strong> the same dataset. JSON: main thread parses once, then each worker receives a <strong>structured clone</strong> of the full array — transfer time is the sender-side <code>postMessage</code> blocking time (clone), and total bytes copied scales with workers. NXS: one <code>SharedArrayBuffer</code> backed by the <code>.nxb</code> file when cross-origin isolated; each worker gets a view — handoff is O(1) with no byte copy. Init rows include module load + reader construction. Enable the <strong>writer</strong> checkbox to have worker&nbsp;0 patch record&nbsp;42’s <code>score</code> every 50&nbsp;ms while workers&nbsp;1–3 read it; coherency across workers only appears with a real SAB (the banner explains COOP/COEP and fallbacks).
+  </section>
 
   <div id="iso-banner" class="banner warn">Checking cross-origin isolation…</div>
 
