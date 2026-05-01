@@ -52,8 +52,20 @@ jobs:
 
       - name: Smoke test (install from registry)
         run: |
+          set +e
+          VERSION=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' csharp/nxs.csproj | head -1)
           mkdir /tmp/smoke-nuget && cd /tmp/smoke-nuget
           dotnet new console -n SmokeTest
           cd SmokeTest
-          dotnet add package nexus-standard
-          echo "Smoke test: package installable"
+          # NuGet.org v3 registration often lags 30s–minutes after push
+          for attempt in $(seq 1 36); do
+            dotnet add package nexus-standard --version "${VERSION}" >/dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              echo "Smoke test: package installable (attempt ${attempt})"
+              exit 0
+            fi
+            echo "Waiting for NuGet index (attempt ${attempt}/36)..."
+            sleep 10
+          done
+          echo "::error::nexus-standard ${VERSION} not yet visible on NuGet.org — indexing delay exceeded ~6 minutes"
+          exit 1

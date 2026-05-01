@@ -29,9 +29,9 @@ Homepage = "https://github.com/micaelmalta/nexus-standard"
 Repository = "https://github.com/micaelmalta/nexus-standard"
 Documentation = "https://github.com/micaelmalta/nexus-standard/blob/main/SPEC.md"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["nxs*"]
+[tool.setuptools]
+# Flat layout: top-level modules (not a nxs/ package directory)
+py-modules = ["nxs", "nxs_writer"]
 
 [tool.setuptools.package-data]
 "*" = ["*.pyi"]

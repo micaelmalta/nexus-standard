@@ -37,7 +37,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "${NPM_TOKEN}" ]; then
-            echo "::error::Add repository secret NPM_TOKEN (npm granular access token with publish for @micaelmalta/nexus-standard)."
+            echo "::error::Add repository secret NPM_TOKEN — use a granular access token with Publish for @micaelmalta (CI cannot enter npm 2FA OTP). See https://docs.npmjs.com/about-two-factor-authentication"
             exit 1
           fi
 
