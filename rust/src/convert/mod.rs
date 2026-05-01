@@ -360,4 +360,52 @@ mod tests {
         let _ = &a.verify_hash;
         assert_eq!(spec_fields.len(), 3, "spec has 3 inspect flags");
     }
+
+    /// Each new NxsError convert variant maps to the exit code in the spec.
+    #[test]
+    fn convert_errors_map_to_documented_exit_codes() {
+        use crate::error::NxsError;
+        assert_eq!(exit_code_for(&NxsError::ConvertSchemaConflict("x".into())), 4);
+        assert_eq!(
+            exit_code_for(&NxsError::ConvertParseError {
+                offset: 0,
+                msg: "bad".into()
+            }),
+            3
+        );
+        assert_eq!(exit_code_for(&NxsError::ConvertEntityExpansion), 3);
+        assert_eq!(exit_code_for(&NxsError::ConvertDepthExceeded), 3);
+        assert_eq!(exit_code_for(&NxsError::IoError("disk full".into())), 5);
+        assert_eq!(exit_code_for(&NxsError::BadMagic), 3);
+    }
+
+    /// Output path derivation uses only `Path::file_name()` — never traverses `..`.
+    #[test]
+    fn import_output_path_derivation_does_not_traverse() {
+        let cases = &[
+            ("../foo.json", "foo.nxb"),
+            ("/tmp/foo.json", "foo.nxb"),
+            ("foo.json", "foo.nxb"),
+            ("./bar/baz.csv", "baz.nxb"),
+        ];
+        for (input, expected) in cases {
+            let p = std::path::Path::new(input);
+            let stem = p
+                .file_name()
+                .and_then(|n| std::path::Path::new(n).file_stem())
+                .expect("no file stem");
+            let derived = std::path::PathBuf::from(stem).with_extension("nxb");
+            assert_eq!(
+                derived.to_str().unwrap_or(""),
+                *expected,
+                "input={input}"
+            );
+            // Must not contain `..`
+            assert!(
+                !derived.components().any(|c| c
+                    == std::path::Component::ParentDir),
+                "traversal in derived path for input={input}"
+            );
+        }
+    }
 }
