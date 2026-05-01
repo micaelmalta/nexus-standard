@@ -13,6 +13,7 @@
 #![allow(clippy::single_match)]
 
 pub mod compiler;
+pub mod convert;
 pub mod decoder;
 pub mod error;
 pub mod lexer;

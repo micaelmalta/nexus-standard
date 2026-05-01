@@ -785,3 +785,69 @@ cd csharp
 dotnet run -- ../js/fixtures           # 11/11 tests
 dotnet run -c Release -- ../js/fixtures --bench
 ```
+
+## Converters
+
+NXS ships three CLI tools for converting between `.nxb` and JSON/CSV/XML.
+See the [Converter Suite spec](context/data/2026-04-30-converter-suite-spec.yaml) for the full flag reference.
+
+### nxs-import — convert to .nxb
+
+```bash
+# JSON array of objects → .nxb
+nxs-import --from json records.json records.nxb
+
+# CSV → .nxb (auto-detect header, infer types)
+nxs-import --from csv data.csv data.nxb
+
+# XML → .nxb (each <item> becomes a record)
+nxs-import --from xml --xml-record-tag item data.xml data.nxb
+
+# Read from stdin, write to stdout
+cat records.json | nxs-import --from json - -
+
+# Supply a schema hint to skip inference pass (faster; required for stdin)
+nxs-import --from json --schema schema.yaml records.json records.nxb
+```
+
+### nxs-export — convert from .nxb
+
+```bash
+# .nxb → JSON array (compact)
+nxs-export --to json records.nxb records.json
+
+# .nxb → JSON (pretty-printed)
+nxs-export --to json --pretty records.nxb
+
+# .nxb → newline-delimited JSON (streaming-friendly)
+nxs-export --to json --ndjson records.nxb
+
+# .nxb → CSV (schema-key order; override with --columns)
+nxs-export --to csv records.nxb records.csv
+nxs-export --to csv --columns id,name records.nxb
+```
+
+### nxs-inspect — inspect .nxb metadata
+
+```bash
+# Human-readable report (schema + first N records)
+nxs-inspect records.nxb
+
+# Machine-readable JSON report (schema_version: 1)
+nxs-inspect --json records.nxb
+
+# Verify DictHash integrity
+nxs-inspect --verify-hash records.nxb
+```
+
+### Pipeline demo
+
+```bash
+# JSON → .nxb → inspect → export back to JSON
+cat records.json \
+  | nxs-import --from json - - \
+  | tee /tmp/out.nxb \
+  | nxs-inspect --json - \
+  | jq '.record_count'
+nxs-export --to json /tmp/out.nxb
+```
