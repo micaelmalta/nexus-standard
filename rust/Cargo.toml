@@ -58,6 +58,10 @@ quick-xml = { version = "0.36", features = ["encoding"] }
 base64 = "0.22"
 tempfile = "3"
 
+[[test]]
+name = "exit_codes"
+path = "tests/convert/exit_codes.rs"
+
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
