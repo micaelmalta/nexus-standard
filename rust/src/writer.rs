@@ -135,7 +135,7 @@ impl<'a> NxsWriter<'a> {
         // Write placeholder magic + length (will back-patch length at end)
         self.buf.extend_from_slice(&MAGIC_OBJ.to_le_bytes());
         self.buf.extend_from_slice(&0u32.to_le_bytes()); // length placeholder
-        // Reserve bitmask space (will back-patch)
+                                                         // Reserve bitmask space (will back-patch)
         self.buf
             .extend_from_slice(&self.frames.last().unwrap().bitmask.clone());
         // Reserve offset table space: u16 per possible slot (upper bound)

@@ -1,7 +1,7 @@
 [package]
 name = "nxs"
 version = "1.0.0"
-edition = "2024"
+edition = "2021"
 authors = ["Micael Malta"]
 license = "MIT"
 description = "Zero-copy compiler and reader for the Nexus Standard (NXS) bi-modal serialization format"

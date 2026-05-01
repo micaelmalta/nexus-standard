@@ -11,7 +11,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use nxs::decoder::{DecodedValue, decode};
+use nxs::decoder::{decode, DecodedValue};
 use nxs::error::NxsError;
 
 // ── Minimal JSON parser for expected.json ─────────────────────────────────────
