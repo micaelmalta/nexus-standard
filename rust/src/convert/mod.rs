@@ -274,7 +274,7 @@ pub fn load_schema_hint(path: &std::path::Path) -> Result<InferredSchema> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| crate::error::NxsError::IoError(format!("{}: {e}", path.display())))?;
     let hint: SchemaHintFile =
-        serde_yml::from_str(&text).map_err(|e| crate::error::NxsError::ConvertParseError {
+        serde_yaml2::de::from_str(&text).map_err(|e| crate::error::NxsError::ConvertParseError {
             offset: 0,
             msg: format!("schema hint YAML parse error: {e}"),
         })?;
