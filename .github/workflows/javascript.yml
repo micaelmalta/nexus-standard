@@ -2,6 +2,7 @@ name: JavaScript
 
 on:
   push:
+    branches: [main]
     paths: ['js/**', 'Makefile', '.github/workflows/javascript.yml']
   pull_request:
     paths: ['js/**', 'Makefile', '.github/workflows/javascript.yml']

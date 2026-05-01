@@ -2,6 +2,7 @@ name: Swift
 
 on:
   push:
+    branches: [main]
     paths: ['swift/**', 'Makefile', '.github/workflows/swift.yml']
   pull_request:
     paths: ['swift/**', 'Makefile', '.github/workflows/swift.yml']

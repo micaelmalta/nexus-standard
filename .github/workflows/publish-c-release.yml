@@ -2,11 +2,21 @@ name: Publish C Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing git tag to build (e.g. v1.0.0)'
+        required: true
+        type: string
+  push:
+    tags: ['v*']
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
 
       - name: Build and test
         working-directory: c
@@ -16,7 +26,12 @@ jobs:
 
       - name: Create release tarball
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${TAG#v}"
           TARDIR="nxs-c-${VERSION}"
           mkdir "${TARDIR}"
           cp c/nxs.h c/nxs.c c/CMakeLists.txt c/README.md "${TARDIR}/"

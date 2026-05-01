@@ -2,6 +2,7 @@ name: PHP
 
 on:
   push:
+    branches: [main]
     paths: ['php/**', 'Makefile', '.github/workflows/php.yml']
   pull_request:
     paths: ['php/**', 'Makefile', '.github/workflows/php.yml']

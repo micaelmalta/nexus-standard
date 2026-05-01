@@ -2,6 +2,7 @@ name: Ruby
 
 on:
   push:
+    branches: [main]
     paths: ['ruby/**', 'Makefile', '.github/workflows/ruby.yml']
   pull_request:
     paths: ['ruby/**', 'Makefile', '.github/workflows/ruby.yml']

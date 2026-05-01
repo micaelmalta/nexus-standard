@@ -2,6 +2,7 @@ name: Conformance
 
 on:
   push:
+    branches: [main]
     paths:
       - 'conformance/**'
       - 'rust/**'

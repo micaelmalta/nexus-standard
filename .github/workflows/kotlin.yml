@@ -2,6 +2,7 @@ name: Kotlin
 
 on:
   push:
+    branches: [main]
     paths: ['kotlin/**', 'Makefile', '.github/workflows/kotlin.yml']
   pull_request:
     paths: ['kotlin/**', 'Makefile', '.github/workflows/kotlin.yml']

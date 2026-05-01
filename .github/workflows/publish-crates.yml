@@ -2,6 +2,9 @@ name: Publish crates.io
 
 on:
   workflow_dispatch:
+  release:
+    types: [published]
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -10,6 +13,8 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -33,6 +38,8 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
 
