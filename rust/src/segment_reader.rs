@@ -45,9 +45,11 @@ struct SealedSegment {
     sigils: Vec<u8>,
 }
 
-/// Read-only view of a live WAL.
+/// Read-only view of a live WAL — data loaded once at open time.
 struct WalReader {
     wal: SpanWal,
+    /// Raw WAL file bytes cached so queries don't re-read the file each time.
+    data: Vec<u8>,
 }
 
 impl SegmentReader {
@@ -81,7 +83,8 @@ impl SegmentReader {
         let wal = if let Some(p) = wal_path {
             let mut w = SpanWal::open(&p)?;
             w.recover()?;
-            Some(WalReader { wal: w })
+            let data = fs::read(w.path()).map_err(|e| NxsError::IoError(e.to_string()))?;
+            Some(WalReader { wal: w, data })
         } else {
             None
         };
@@ -106,11 +109,8 @@ impl SegmentReader {
         if let Some(ref wr) = self.wal {
             for entry in &wr.wal.index {
                 if entry.trace_id == trace_id {
-                    // Re-open WAL and decode the record at that offset
-                    if let Ok(data) = fs::read(wr.wal.path()) {
-                        if let Some(span) = decode_span_from_raw(&data, entry.offset as usize) {
-                            spans.push(span);
-                        }
+                    if let Some(span) = decode_span_from_raw(&wr.data, entry.offset as usize) {
+                        spans.push(span);
                     }
                 }
             }
@@ -143,12 +143,10 @@ impl SegmentReader {
         }
 
         if let Some(ref wr) = self.wal {
-            if let Ok(data) = fs::read(wr.wal.path()) {
-                for entry in &wr.wal.index {
-                    if let Some(span) = decode_span_from_raw(&data, entry.offset as usize) {
-                        if span.start_time_ns >= start_ns && span.start_time_ns <= end_ns {
-                            spans.push(span);
-                        }
+            for entry in &wr.wal.index {
+                if let Some(span) = decode_span_from_raw(&wr.data, entry.offset as usize) {
+                    if span.start_time_ns >= start_ns && span.start_time_ns <= end_ns {
+                        spans.push(span);
                     }
                 }
             }
@@ -258,9 +256,21 @@ fn fields_to_span(fields: &[(String, DecodedValue)]) -> Option<Span> {
     })
 }
 
+const SPAN_KEYS: &[&str] = &[
+    "trace_id_hi",
+    "trace_id_lo",
+    "span_id",
+    "parent_span_id",
+    "name",
+    "service",
+    "start_time_ns",
+    "duration_ns",
+    "status_code",
+    "payload",
+];
+const SPAN_SIGILS: &[u8] = b"====\"\"@==<";
+
 fn decode_span_from_raw(data: &[u8], offset: usize) -> Option<Span> {
-    // The WAL data section starts at offset; the object is NXSO at `offset`.
-    // We need to validate it's not the WAL header itself.
     if offset + 4 > data.len() {
         return None;
     }
@@ -269,24 +279,8 @@ fn decode_span_from_raw(data: &[u8], offset: usize) -> Option<Span> {
         return None;
     }
 
-    let keys: Vec<String> = vec![
-        "trace_id_hi",
-        "trace_id_lo",
-        "span_id",
-        "parent_span_id",
-        "name",
-        "service",
-        "start_time_ns",
-        "duration_ns",
-        "status_code",
-        "payload",
-    ]
-    .into_iter()
-    .map(|s| s.to_string())
-    .collect();
-    let sigils: Vec<u8> = vec![b'=', b'=', b'=', b'=', b'"', b'"', b'@', b'=', b'=', b'<'];
-
-    let fields = decode_record_at(data, offset, &keys, &sigils).ok()?;
+    let keys: Vec<String> = SPAN_KEYS.iter().map(|s| s.to_string()).collect();
+    let fields = decode_record_at(data, offset, &keys, SPAN_SIGILS).ok()?;
     fields_to_span(&fields)
 }
 

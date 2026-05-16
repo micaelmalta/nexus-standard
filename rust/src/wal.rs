@@ -31,6 +31,7 @@ pub const MAGIC_WAL: u32 = 0x5753584E; // NXSW
 pub const MAGIC_OBJ: u32 = 0x4E58534F; // NXSO
 const WAL_VERSION: u16 = 0x0100;
 const WAL_FLAG_SCHEMA_EMBEDDED: u16 = 0x0001;
+const MAX_RECORD_BYTES: u64 = 10 * 1024 * 1024; // 10 MB OOM guard
 
 /// Span identity extracted from each WAL record for the in-memory index.
 #[derive(Debug, Clone)]
@@ -107,6 +108,8 @@ pub struct SpanWal {
     schema: SpanSchema,
     /// Byte offset of the first record (right after the WAL header).
     data_start: u64,
+    /// Tracked in-process so append() never calls metadata() for a syscall.
+    current_offset: u64,
 }
 
 impl SpanWal {
@@ -149,6 +152,14 @@ impl SpanWal {
                 .map_err(|e| NxsError::IoError(e.to_string()))?;
         }
 
+        // For an existing file we don't know the true end yet — recover() will
+        // set current_offset after scanning.  For a new file it equals data_start.
+        let initial_offset = if file_exists {
+            0 // will be corrected by recover()
+        } else {
+            data_start
+        };
+
         Ok(SpanWal {
             path,
             file: writer,
@@ -156,23 +167,13 @@ impl SpanWal {
             record_count: 0,
             schema,
             data_start,
+            current_offset: initial_offset,
         })
     }
 
     /// Append a span to the WAL. Returns the absolute byte offset of the record.
     pub fn append(&mut self, span: &SpanFields) -> Result<u64> {
-        self.file
-            .flush()
-            .map_err(|e| NxsError::IoError(e.to_string()))?;
-
-        // Compute current file position = offset of the record we're about to write
-        let file_offset = {
-            let inner = self.file.get_ref();
-            inner
-                .metadata()
-                .map_err(|e| NxsError::IoError(e.to_string()))?
-                .len()
-        };
+        let file_offset = self.current_offset;
 
         // Encode one NXS object
         let mut w = NxsWriter::new(&self.schema.schema);
@@ -203,8 +204,11 @@ impl SpanWal {
             .write_all(data_sector)
             .map_err(|e| NxsError::IoError(e.to_string()))?;
 
-        // Update in-memory index
-        let trace_id = ((span.trace_id_hi as u128) << 64) | (span.trace_id_lo as u64 as u128);
+        self.current_offset += data_sector.len() as u64;
+
+        // Cast via u64 to preserve bit pattern and avoid sign-extension into the high half.
+        let trace_id =
+            ((span.trace_id_hi as u64 as u128) << 64) | (span.trace_id_lo as u64 as u128);
         self.index.push(WalEntry {
             trace_id,
             span_id: span.span_id as u64,
@@ -269,7 +273,7 @@ impl SpanWal {
             let obj_len = u32::from_le_bytes(rec_header[4..8].try_into().unwrap()) as u64;
 
             // Read the full object to extract trace_id / span_id from bitmask + offsets
-            if obj_len < 8 || pos + obj_len > file_len {
+            if !(8..=MAX_RECORD_BYTES).contains(&obj_len) || pos + obj_len > file_len {
                 break;
             }
             let mut obj_buf = vec![0u8; obj_len as usize];
@@ -289,6 +293,8 @@ impl SpanWal {
 
         self.index = index;
         self.record_count = record_count;
+        // Sync offset so subsequent appends don't call metadata().
+        self.current_offset = file_len;
         Ok(())
     }
 
@@ -531,7 +537,8 @@ fn extract_trace_span_id(obj: &[u8]) -> Option<(u128, u64)> {
     let hi = read_i64_at_slot(0)? as u64;
     let lo = read_i64_at_slot(1)? as u64;
     let span_id = read_i64_at_slot(2)? as u64;
-    let trace_id = ((hi as u128) << 64) | lo as u128;
+    // Cast via u64 first to preserve bit pattern; direct i64→u128 sign-extends.
+    let trace_id = ((hi as u128) << 64) | (lo as u128);
     Some((trace_id, span_id))
 }
 
@@ -549,17 +556,27 @@ struct DecodedSpan {
     payload_owned: Option<Vec<u8>>,
 }
 
+const SPAN_KEYS: &[&str] = &[
+    "trace_id_hi",
+    "trace_id_lo",
+    "span_id",
+    "parent_span_id",
+    "name",
+    "service",
+    "start_time_ns",
+    "duration_ns",
+    "status_code",
+    "payload",
+];
+const SPAN_SIGILS: &[u8] = b"====\"\"@==<";
+
 fn decode_span_object(obj: &[u8]) -> Option<DecodedSpan> {
     use crate::decoder::{decode_record_at, DecodedValue};
 
-    // We need a schema key list for the decoder.
-    let keys: Vec<String> = schema_keys(&SpanSchema::new().schema)
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let sigils: Vec<u8> = vec![b'=', b'=', b'=', b'=', b'"', b'"', b'@', b'=', b'=', b'<'];
+    let keys: Vec<String> = SPAN_KEYS.iter().map(|s| s.to_string()).collect();
+    let sigils = SPAN_SIGILS;
 
-    let fields = decode_record_at(obj, 0, &keys, &sigils).ok()?;
+    let fields = decode_record_at(obj, 0, &keys, sigils).ok()?;
     let get_i64 = |name: &str| -> Option<i64> {
         fields.iter().find_map(|(k, v)| {
             if k == name {
