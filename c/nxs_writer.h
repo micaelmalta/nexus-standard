@@ -88,6 +88,10 @@ int nxs_write_bytes(nxs_writer_t *w, int slot, const uint8_t *data, uint32_t len
 // Returns 0 on success.  Caller must call nxs_writer_free() when done.
 int nxs_writer_finish(nxs_writer_t *w);
 
+// Reset: clear all records and restart the data sector, keeping the schema and
+// the allocated buffer.  Cheaper than free + init for reuse across many spans.
+void nxs_writer_reset(nxs_writer_t *w);
+
 #ifdef __cplusplus
 }
 #endif
