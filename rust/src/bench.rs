@@ -1,11 +1,13 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 mod compiler;
 mod decoder;
-/// NXS vs JSON vs XML vs CSV benchmark
+/// NXS vs JSON vs XML vs CSV benchmark + WAL span ingestion benchmark
 /// Measures: output byte size and serialization/deserialization throughput.
 mod error;
 mod lexer;
 mod parser;
+mod segment_reader;
+mod wal;
 mod writer;
 
 use compiler::Compiler;
@@ -394,4 +396,266 @@ fn main() {
     println!("  NXS compiler: .nxs source text → lex → parse → AST → binary (one-time build step)");
     println!("  NXS wire:     typed struct → direct binary write (the actual hot-path)");
     println!("  JSON/XML/CSV: string formatting → bytes (no parsing overhead on write side)\n");
+
+    bench_wal();
+}
+
+// ── WAL benchmarks ────────────────────────────────────────────────────────────
+
+fn span_dataset(n: usize) -> Vec<wal::SpanFields<'static>> {
+    // Build owned strings first, then leak them so SpanFields<'static> works.
+    // This is bench-only code — the leak is intentional.
+    (0..n)
+        .map(|i| {
+            let name: &'static str = Box::leak(format!("op.{}", i % 20).into_boxed_str());
+            let service: &'static str = Box::leak(format!("svc-{}", i % 5).into_boxed_str());
+            wal::SpanFields {
+                trace_id_hi: (i / 10) as i64,
+                trace_id_lo: (i % 10) as i64,
+                span_id: i as i64 + 1,
+                parent_span_id: if i % 5 == 0 {
+                    None
+                } else {
+                    Some((i - 1) as i64 + 1)
+                },
+                name,
+                service,
+                start_time_ns: 1_715_000_000_000_000_000_i64 + i as i64 * 1_000,
+                duration_ns: 1_000 + (i % 50_000) as i64,
+                status_code: (i % 3) as i64,
+                payload: None,
+            }
+        })
+        .collect()
+}
+
+fn bench_wal() {
+    println!(
+        "\n╔══════════════════════════════════════════════════════════════════════════════════╗"
+    );
+    println!("║                        WAL Span Ingestion — Benchmark                           ║");
+    println!(
+        "╚══════════════════════════════════════════════════════════════════════════════════╝\n"
+    );
+    println!("  Scenarios measured:");
+    println!("    append       — encode + write one span to a temp WAL file");
+    println!("    append-batch — encode + write N spans, measure amortised per-span cost");
+    println!("    recover      — linear scan to rebuild in-memory index from existing WAL");
+    println!("    seal         — replay WAL → sealed .nxb segment");
+    println!("    roundtrip    — append N spans, seal, query all by trace_id\n");
+
+    const WAL_SIZES: &[usize] = &[1_000, 10_000, 100_000];
+
+    for &n in WAL_SIZES {
+        let spans = span_dataset(n);
+        let iters = iters_for(n);
+
+        println!(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  {n} spans  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        );
+
+        // ── append-batch ──────────────────────────────────────────────────────
+        let t_append = bench(iters, || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let wal_path = dir.path().join("bench.nxsw");
+            let mut w = wal::SpanWal::open(&wal_path).expect("open");
+            for s in &spans {
+                w.append(s).expect("append");
+            }
+            w.flush().expect("flush");
+            let wal_bytes = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
+            wal_bytes
+        });
+
+        // ── recover ───────────────────────────────────────────────────────────
+        // Pre-build a WAL file, then measure recovery time separately.
+        let recover_dir = tempfile::tempdir().expect("tempdir");
+        let recover_wal_path = recover_dir.path().join("recover.nxsw");
+        {
+            let mut w = wal::SpanWal::open(&recover_wal_path).expect("open");
+            for s in &spans {
+                w.append(s).expect("append");
+            }
+            w.flush().expect("flush");
+        }
+        let wal_file_size = std::fs::metadata(&recover_wal_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        let t_recover = bench(iters, || {
+            let mut w = wal::SpanWal::open(&recover_wal_path).expect("open");
+            w.recover().expect("recover");
+            w.record_count()
+        });
+
+        // ── seal ──────────────────────────────────────────────────────────────
+        let seal_dir = tempfile::tempdir().expect("tempdir");
+        let seal_wal_path = seal_dir.path().join("seal.nxsw");
+        {
+            let mut w = wal::SpanWal::open(&seal_wal_path).expect("open");
+            for s in &spans {
+                w.append(s).expect("append");
+            }
+            w.flush().expect("flush");
+        }
+
+        let t_seal = bench(iters, || {
+            let mut w = wal::SpanWal::open(&seal_wal_path).expect("open");
+            w.recover().expect("recover");
+            let seg = seal_dir.path().join("bench.nxb");
+            let report = w.seal(&seg).expect("seal");
+            std::fs::remove_file(&seg).ok();
+            report.bytes_written
+        });
+
+        // ── roundtrip: append → seal → query ─────────────────────────────────
+        let t_roundtrip = bench(iters.min(3), || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let wal_path = dir.path().join("rt.nxsw");
+            let mut w = wal::SpanWal::open(&wal_path).expect("open");
+            for s in &spans {
+                w.append(s).expect("append");
+            }
+            w.flush().expect("flush");
+            let seg = dir.path().join("rt.nxb");
+            w.recover().expect("recover");
+            w.seal(&seg).expect("seal");
+            std::fs::remove_file(&wal_path).ok();
+
+            // Query the first trace_id from the segment
+            let reader = segment_reader::SegmentReader::open(dir.path()).expect("reader");
+            let trace_id =
+                ((spans[0].trace_id_hi as u128) << 64) | spans[0].trace_id_lo as u64 as u128;
+            reader.find_by_trace(trace_id).map(|v| v.len()).unwrap_or(0)
+        });
+
+        // ── json-ndjson per-span ──────────────────────────────────────────────
+        #[derive(serde::Serialize)]
+        struct SpanJson<'a> {
+            trace_id_hi: i64,
+            trace_id_lo: i64,
+            span_id: i64,
+            parent_span_id: Option<i64>,
+            name: &'a str,
+            service: &'a str,
+            start_time_ns: i64,
+            duration_ns: i64,
+            status_code: i64,
+        }
+        let t_json = bench(iters, || {
+            let mut out = Vec::with_capacity(n * 200);
+            for s in &spans {
+                serde_json::to_writer(
+                    &mut out,
+                    &SpanJson {
+                        trace_id_hi: s.trace_id_hi,
+                        trace_id_lo: s.trace_id_lo,
+                        span_id: s.span_id,
+                        parent_span_id: s.parent_span_id,
+                        name: s.name,
+                        service: s.service,
+                        start_time_ns: s.start_time_ns,
+                        duration_ns: s.duration_ns,
+                        status_code: s.status_code,
+                    },
+                )
+                .unwrap();
+                out.push(b'\n');
+            }
+            out.len()
+        });
+
+        // ── print results ─────────────────────────────────────────────────────
+        println!(
+            "\n  ┌─ Timings (avg over {iters} runs) ────────────────────────────────────────────────┐"
+        );
+        let ns_per_span = |d: std::time::Duration| d.as_nanos() as f64 / n as f64;
+        println!(
+            "  │  append-batch   {:>10}  total  ({:.0} ns/span)",
+            fmt_ns(t_append),
+            ns_per_span(t_append)
+        );
+        println!(
+            "  │  recover        {:>10}  total  ({:.0} ns/span)",
+            fmt_ns(t_recover),
+            ns_per_span(t_recover)
+        );
+        println!(
+            "  │  seal           {:>10}  total  ({:.0} ns/span)",
+            fmt_ns(t_seal),
+            ns_per_span(t_seal)
+        );
+        println!(
+            "  │  roundtrip      {:>10}  total  ({:.0} ns/span)  [iters={}]",
+            fmt_ns(t_roundtrip),
+            ns_per_span(t_roundtrip),
+            iters.min(3)
+        );
+        println!(
+            "  │  json-ndjson    {:>10}  total  ({:.0} ns/span)  [serde_json per span]",
+            fmt_ns(t_json),
+            ns_per_span(t_json)
+        );
+        println!(
+            "  └─────────────────────────────────────────────────────────────────────────────┘"
+        );
+
+        println!(
+            "\n  ┌─ File sizes ────────────────────────────────────────────────────────────────┐"
+        );
+        // Measure sealed .nxb size once
+        let size_dir = tempfile::tempdir().expect("tempdir");
+        let size_wal = size_dir.path().join("s.nxsw");
+        let size_seg = size_dir.path().join("s.nxb");
+        {
+            let mut w = wal::SpanWal::open(&size_wal).expect("open");
+            for s in &spans {
+                w.append(s).expect("append");
+            }
+            w.recover().expect("recover");
+            w.seal(&size_seg).expect("seal");
+        }
+        let wal_sz = wal_file_size;
+        let seg_sz = std::fs::metadata(&size_seg).map(|m| m.len()).unwrap_or(0);
+        let json_sz = spans
+            .iter()
+            .map(|s| {
+                format!(
+                    "{{\"trace_id\":\"{:016x}{:016x}\",\"span_id\":\"{:016x}\",\
+                     \"name\":\"{}\",\"service\":\"{}\",\
+                     \"start_time_ns\":{},\"duration_ns\":{},\"status_code\":{}}}",
+                    s.trace_id_hi,
+                    s.trace_id_lo,
+                    s.span_id,
+                    s.name,
+                    s.service,
+                    s.start_time_ns,
+                    s.duration_ns,
+                    s.status_code
+                )
+                .len()
+            })
+            .sum::<usize>();
+        let baseline = json_sz as f64;
+        println!(
+            "  │  WAL (.nxsw)    {:>10}  ({:>5.1}% of JSON NDJSON)",
+            fmt_bytes(wal_sz as usize),
+            wal_sz as f64 / baseline * 100.0
+        );
+        println!(
+            "  │  Sealed (.nxb)  {:>10}  ({:>5.1}% of JSON NDJSON)",
+            fmt_bytes(seg_sz as usize),
+            seg_sz as f64 / baseline * 100.0
+        );
+        println!("  │  JSON NDJSON    {:>10}  (baseline)", fmt_bytes(json_sz));
+        println!(
+            "  └─────────────────────────────────────────────────────────────────────────────┘\n"
+        );
+    }
+
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("  WAL append:  encode span → NxsWriter → write NXSO bytes to disk");
+    println!("  recover:     open existing WAL, linear scan, rebuild in-memory trace index");
+    println!("  seal:        replay WAL → full .nxb with tail-index (crash-safe export)");
+    println!("  roundtrip:   append + seal + SegmentReader.find_by_trace() end-to-end\n");
 }

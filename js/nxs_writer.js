@@ -85,10 +85,23 @@ export class NxsWriter {
    */
   constructor(schema) {
     this.schema = schema;
-    this._buf = [];          // array of Uint8Array chunks
-    this._len = 0;           // total bytes written to _buf so far
+    this._buf = new Uint8Array(4096);  // pre-allocated, grows by doubling
+    this._view = new DataView(this._buf.buffer);
+    this._len = 0;
     this._frames = [];       // stack of open object frames
     this._recordOffsets = []; // record start positions in data sector
+  }
+
+  // ── Buffer growth ────────────────────────────────────────────────────────
+
+  _grow(need) {
+    if (this._len + need <= this._buf.length) return;
+    let newSize = this._buf.length * 2;
+    while (this._len + need > newSize) newSize *= 2;
+    const newBuf = new Uint8Array(newSize);
+    newBuf.set(this._buf.subarray(0, this._len));
+    this._buf = newBuf;
+    this._view = new DataView(this._buf.buffer);
   }
 
   // ── Frame management ────────────────────────────────────────────────────
@@ -140,8 +153,8 @@ export class NxsWriter {
     const frame = this._frames.pop();
     if (!frame) throw new Error("endObject without beginObject");
 
-    // We need a contiguous view for back-patching — materialise now
-    const totalData = this._materialize();
+    // With a single contiguous buffer, back-patching is direct — no merge needed.
+    const totalData = this._buf;
 
     const totalLen = this._len - frame.start;
 
@@ -221,7 +234,7 @@ export class NxsWriter {
     out[p++] = FLAG_SCHEMA_EMBEDDED & 0xFF;
     out[p++] = (FLAG_SCHEMA_EMBEDDED >>> 8) & 0xFF;
 
-    // DictHash — 8 bytes little-endian BigInt
+    // DictHash — 8 bytes little-endian BigInt (one-time, not hot path)
     for (let i = 0; i < 8; i++) {
       out[p++] = Number((dictHash >> BigInt(i * 8)) & 0xFFn);
     }
@@ -257,12 +270,19 @@ export class NxsWriter {
 
   // ── Typed write methods ──────────────────────────────────────────────────
 
-  writeI64(slot, v /* BigInt */) {
+  writeI64(slot, v) {
     this._markSlot(slot);
-    const big = BigInt.asIntN(64, v);
-    for (let i = 0; i < 8; i++) {
-      this._writeByte(Number((big >> BigInt(i * 8)) & 0xFFn));
+    let lo, hi;
+    if (typeof v === "bigint") {
+      const u = BigInt.asUintN(64, v);
+      lo = Number(u & 0xFFFFFFFFn);
+      hi = Number(u >> 32n);
+    } else {
+      // number path: handle signed 32-bit split correctly
+      lo = v >>> 0;
+      hi = Math.floor(v / 4294967296) >>> 0;
     }
+    this._writeI64Parts(lo, hi);
   }
 
   writeF64(slot, v) {
@@ -272,40 +292,44 @@ export class NxsWriter {
 
   writeBool(slot, v) {
     this._markSlot(slot);
-    this._writeByte(v ? 0x01 : 0x00);
-    for (let i = 0; i < 7; i++) this._writeByte(0);
+    this._grow(8);
+    this._buf[this._len] = v ? 0x01 : 0x00;
+    this._buf.fill(0, this._len + 1, this._len + 8);
+    this._len += 8;
   }
 
-  writeTime(slot, unixNs /* BigInt or number */) {
-    this.writeI64(slot, BigInt(unixNs));
+  writeTime(slot, unixNs) {
+    this.writeI64(slot, unixNs);
   }
 
   writeNull(slot) {
     this._markSlot(slot);
-    this._writeByte(0x00);
-    for (let i = 0; i < 7; i++) this._writeByte(0);
+    this._grow(8);
+    this._buf.fill(0, this._len, this._len + 8);
+    this._len += 8;
   }
 
   writeStr(slot, v) {
     this._markSlot(slot);
     const bytes = encodeUtf8(v);
     const len = bytes.length;
-    this._writeU32(len);
-    this._writeBytes(bytes);
-    // Pad so that (4 + len + pad) ≡ 0 (mod 8)
     const used = (4 + len) % 8;
     const pad  = used === 0 ? 0 : (8 - used);
-    for (let i = 0; i < pad; i++) this._writeByte(0);
+    this._grow(4 + len + pad);
+    this._view.setUint32(this._len, len, true); this._len += 4;
+    this._buf.set(bytes, this._len); this._len += len;
+    if (pad > 0) { this._buf.fill(0, this._len, this._len + pad); this._len += pad; }
   }
 
   writeBytes(slot, data) {
     this._markSlot(slot);
     const len = data.length;
-    this._writeU32(len);
-    this._writeBytes(data);
     const used = (4 + len) % 8;
     const pad  = used === 0 ? 0 : (8 - used);
-    for (let i = 0; i < pad; i++) this._writeByte(0);
+    this._grow(4 + len + pad);
+    this._view.setUint32(this._len, len, true); this._len += 4;
+    this._buf.set(data, this._len); this._len += len;
+    if (pad > 0) { this._buf.fill(0, this._len, this._len + pad); this._len += pad; }
   }
 
   writeListI64(slot, values) {
@@ -317,10 +341,16 @@ export class NxsWriter {
     this._writeU32(values.length);
     this._writeByte(0); this._writeByte(0); this._writeByte(0); // padding
     for (const v of values) {
-      const big = BigInt.asIntN(64, BigInt(v));
-      for (let i = 0; i < 8; i++) {
-        this._writeByte(Number((big >> BigInt(i * 8)) & 0xFFn));
+      let lo, hi;
+      if (typeof v === "bigint") {
+        const u = BigInt.asUintN(64, v);
+        lo = Number(u & 0xFFFFFFFFn);
+        hi = Number(u >> 32n);
+      } else {
+        lo = v >>> 0;
+        hi = Math.floor(v / 4294967296) >>> 0;
       }
+      this._writeI64Parts(lo, hi);
     }
   }
 
@@ -375,6 +405,14 @@ export class NxsWriter {
     return w.finish();
   }
 
+  // ── Reset for WAL reuse ──────────────────────────────────────────────────
+
+  reset() {
+    this._len = 0;
+    this._frames = [];
+    this._recordOffsets = [];
+  }
+
   // ── Private helpers ──────────────────────────────────────────────────────
 
   _markSlot(slot) {
@@ -399,45 +437,35 @@ export class NxsWriter {
   }
 
   _writeByte(b) {
-    const chunk = new Uint8Array(1);
-    chunk[0] = b & 0xFF;
-    this._buf.push(chunk);
-    this._len += 1;
+    this._grow(1);
+    this._buf[this._len++] = b & 0xFF;
   }
 
   _writeU32(v) {
-    const chunk = new Uint8Array(4);
-    chunk[0] = v & 0xFF;
-    chunk[1] = (v >>> 8) & 0xFF;
-    chunk[2] = (v >>> 16) & 0xFF;
-    chunk[3] = (v >>> 24) & 0xFF;
-    this._buf.push(chunk);
+    this._grow(4);
+    this._view.setUint32(this._len, v, true);
     this._len += 4;
+  }
+
+  _writeI64Parts(lo, hi) {
+    this._grow(8);
+    this._view.setUint32(this._len, lo, true);
+    this._view.setUint32(this._len + 4, hi, true);
+    this._len += 8;
   }
 
   _writeBytes(bytes) {
     if (bytes.length === 0) return;
-    const chunk = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-    this._buf.push(chunk);
-    this._len += chunk.length;
+    this._grow(bytes.length);
+    this._buf.set(bytes, this._len);
+    this._len += bytes.length;
   }
 
   /**
-   * Materialise all chunks into a single Uint8Array and reset the buffer
-   * to a single chunk (for back-patching).
+   * Return a view of the written bytes (no merge needed — single contiguous buffer).
    */
   _materialize() {
-    if (this._buf.length === 1 && this._buf[0].length === this._len) {
-      return this._buf[0];
-    }
-    const merged = new Uint8Array(this._len);
-    let off = 0;
-    for (const chunk of this._buf) {
-      merged.set(chunk, off);
-      off += chunk.length;
-    }
-    this._buf = [merged];
-    return merged;
+    return this._buf.subarray(0, this._len);
   }
 
   /**

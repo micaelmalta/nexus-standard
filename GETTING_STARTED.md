@@ -252,6 +252,7 @@ cd js && python3 server.py   # needed for SharedArrayBuffer (COOP/COEP headers)
 # http://localhost:8000/ticker.html    — 60 FPS jank demo
 # http://localhost:8000/workers.html   — SharedArrayBuffer workers
 # http://localhost:8000/explorer.html  — 10M-line log explorer
+# http://localhost:8000/wal.html       — WAL ingestion (5 encoders + cross-language chart)
 ```
 
 ---

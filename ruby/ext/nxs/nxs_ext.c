@@ -617,6 +617,243 @@ cobject_get_bool(VALUE self, VALUE key)
     return obj->reader->data[off] ? Qtrue : Qfalse;
 }
 
+/* ── Writer / Schema C types ─────────────────────────────────────────────── */
+
+#include "../../../c/nxs_writer.h"
+#include "../../../c/nxs_writer.c"
+
+/* ── Schema type ─────────────────────────────────────────────────────────── */
+
+typedef struct {
+    char  *key_buf;   /* single heap block: all key strings */
+    char **keys;
+    int    key_count;
+} CSchemaData;
+
+static void
+cschema_free(void *ptr)
+{
+    CSchemaData *d = (CSchemaData *)ptr;
+    free(d->key_buf);
+    free(d->keys);
+    free(d);
+}
+
+static size_t
+cschema_memsize(const void *ptr)
+{
+    (void)ptr; return sizeof(CSchemaData);
+}
+
+static const rb_data_type_t cschema_type = {
+    "Nxs::CSchema",
+    { NULL, cschema_free, cschema_memsize },
+    NULL, NULL, RUBY_TYPED_FREE_IMMEDIATELY
+};
+
+static VALUE rb_cCSchema;
+
+static VALUE
+cschema_alloc(VALUE klass)
+{
+    CSchemaData *d = (CSchemaData *)calloc(1, sizeof(CSchemaData));
+    return TypedData_Wrap_Struct(klass, &cschema_type, d);
+}
+
+static VALUE
+cschema_initialize(VALUE self, VALUE keys_ary)
+{
+    Check_Type(keys_ary, T_ARRAY);
+    long n = RARRAY_LEN(keys_ary);
+    if (n <= 0 || n > NXS_WRITER_MAX_KEYS)
+        rb_raise(rb_eArgError, "key list must have 1–256 entries");
+
+    CSchemaData *d;
+    TypedData_Get_Struct(self, CSchemaData, &cschema_type, d);
+
+    /* Compute total key-string storage */
+    size_t total = 0;
+    for (long i = 0; i < n; i++) {
+        VALUE k = rb_ary_entry(keys_ary, i);
+        Check_Type(k, T_STRING);
+        total += (size_t)RSTRING_LEN(k) + 1;
+    }
+
+    d->key_buf  = (char *)malloc(total);
+    d->keys     = (char **)malloc((size_t)n * sizeof(char *));
+    if (!d->key_buf || !d->keys) rb_raise(rb_eNoMemError, "out of memory");
+
+    char *p = d->key_buf;
+    for (long i = 0; i < n; i++) {
+        VALUE k = rb_ary_entry(keys_ary, i);
+        long  slen = RSTRING_LEN(k);
+        memcpy(p, RSTRING_PTR(k), (size_t)slen);
+        p[slen] = '\0';
+        d->keys[i] = p;
+        p += slen + 1;
+    }
+    d->key_count = (int)n;
+    return self;
+}
+
+/* ── Writer type ─────────────────────────────────────────────────────────── */
+
+static void
+cwriter_free(void *ptr)
+{
+    nxs_writer_t *w = (nxs_writer_t *)ptr;
+    nxs_writer_free(w);
+    free(w);
+}
+
+static size_t
+cwriter_memsize(const void *ptr)
+{
+    const nxs_writer_t *w = (const nxs_writer_t *)ptr;
+    return sizeof(nxs_writer_t) + w->buf_len + (size_t)w->record_cap * sizeof(uint32_t);
+}
+
+static const rb_data_type_t cwriter_type = {
+    "Nxs::CWriter",
+    { NULL, cwriter_free, cwriter_memsize },
+    NULL, NULL, RUBY_TYPED_FREE_IMMEDIATELY
+};
+
+static VALUE rb_cCWriter;
+
+static VALUE
+cwriter_alloc(VALUE klass)
+{
+    nxs_writer_t *w = (nxs_writer_t *)calloc(1, sizeof(nxs_writer_t));
+    return TypedData_Wrap_Struct(klass, &cwriter_type, w);
+}
+
+static VALUE
+cwriter_initialize(VALUE self, VALUE schema)
+{
+    CSchemaData *d;
+    TypedData_Get_Struct(schema, CSchemaData, &cschema_type, d);
+
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+
+    if (nxs_writer_init(w, (const char **)d->keys, d->key_count, 4096) != 0)
+        rb_raise(rb_eNoMemError, "nxs_writer_init failed");
+    return self;
+}
+
+static VALUE
+cwriter_begin_object(VALUE self)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    if (nxs_writer_begin_object(w) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_writer_begin_object failed");
+    return self;
+}
+
+static VALUE
+cwriter_end_object(VALUE self)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    if (nxs_writer_end_object(w) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_writer_end_object failed");
+    return self;
+}
+
+static VALUE
+cwriter_write_i64(VALUE self, VALUE slot, VALUE v)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    if (nxs_write_i64(w, NUM2INT(slot), (int64_t)NUM2LL(v)) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_write_i64 failed");
+    return self;
+}
+
+static VALUE
+cwriter_write_f64(VALUE self, VALUE slot, VALUE v)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    if (nxs_write_f64(w, NUM2INT(slot), NUM2DBL(v)) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_write_f64 failed");
+    return self;
+}
+
+static VALUE
+cwriter_write_bool(VALUE self, VALUE slot, VALUE v)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    if (nxs_write_bool(w, NUM2INT(slot), RTEST(v) ? 1 : 0) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_write_bool failed");
+    return self;
+}
+
+static VALUE
+cwriter_write_null(VALUE self, VALUE slot)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    if (nxs_write_null(w, NUM2INT(slot)) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_write_null failed");
+    return self;
+}
+
+static VALUE
+cwriter_write_str(VALUE self, VALUE slot, VALUE str)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    StringValue(str);
+    if (nxs_write_str(w, NUM2INT(slot), RSTRING_PTR(str), (uint32_t)RSTRING_LEN(str)) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_write_str failed");
+    return self;
+}
+
+static VALUE
+cwriter_write_bytes(VALUE self, VALUE slot, VALUE data)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    StringValue(data);
+    if (nxs_write_bytes(w, NUM2INT(slot),
+                        (const uint8_t *)RSTRING_PTR(data),
+                        (uint32_t)RSTRING_LEN(data)) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_write_bytes failed");
+    return self;
+}
+
+static VALUE
+cwriter_finish(VALUE self)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    if (nxs_writer_finish(w) != 0)
+        rb_raise(rb_eRuntimeError, "nxs_writer_finish failed");
+    return rb_str_new((const char *)w->out, (long)w->out_size);
+}
+
+/* Raw NXSO bytes (data sector only — WAL path, no preamble). */
+static VALUE
+cwriter_data_sector(VALUE self)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    return rb_str_new((const char *)w->buf, (long)w->buf_pos);
+}
+
+static VALUE
+cwriter_reset(VALUE self)
+{
+    nxs_writer_t *w;
+    TypedData_Get_Struct(self, nxs_writer_t, &cwriter_type, w);
+    nxs_writer_reset(w);
+    return self;
+}
+
 /* ── Extension init ──────────────────────────────────────────────────────── */
 
 void
@@ -646,4 +883,25 @@ Init_nxs_ext(void)
     rb_define_method(rb_cCObject, "get_i64",  cobject_get_i64,  1);
     rb_define_method(rb_cCObject, "get_f64",  cobject_get_f64,  1);
     rb_define_method(rb_cCObject, "get_bool", cobject_get_bool, 1);
+
+    /* Nxs::CSchema */
+    rb_cCSchema = rb_define_class_under(rb_cNxs, "CSchema", rb_cObject);
+    rb_define_alloc_func(rb_cCSchema, cschema_alloc);
+    rb_define_method(rb_cCSchema, "initialize", cschema_initialize, 1);
+
+    /* Nxs::CWriter */
+    rb_cCWriter = rb_define_class_under(rb_cNxs, "CWriter", rb_cObject);
+    rb_define_alloc_func(rb_cCWriter, cwriter_alloc);
+    rb_define_method(rb_cCWriter, "initialize",   cwriter_initialize,   1);
+    rb_define_method(rb_cCWriter, "begin_object", cwriter_begin_object, 0);
+    rb_define_method(rb_cCWriter, "end_object",   cwriter_end_object,   0);
+    rb_define_method(rb_cCWriter, "write_i64",    cwriter_write_i64,    2);
+    rb_define_method(rb_cCWriter, "write_f64",    cwriter_write_f64,    2);
+    rb_define_method(rb_cCWriter, "write_bool",   cwriter_write_bool,   2);
+    rb_define_method(rb_cCWriter, "write_null",   cwriter_write_null,   1);
+    rb_define_method(rb_cCWriter, "write_str",    cwriter_write_str,    2);
+    rb_define_method(rb_cCWriter, "write_bytes",  cwriter_write_bytes,  2);
+    rb_define_method(rb_cCWriter, "finish",       cwriter_finish,       0);
+    rb_define_method(rb_cCWriter, "data_sector",  cwriter_data_sector,  0);
+    rb_define_method(rb_cCWriter, "reset",        cwriter_reset,        0);
 }
