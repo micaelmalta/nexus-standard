@@ -72,6 +72,6 @@ jobs:
             rust-nightly-
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        run: cargo install cargo-fuzz
 
       - run: make fuzz FUZZ_TIME=60
