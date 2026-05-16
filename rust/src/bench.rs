@@ -407,15 +407,17 @@ fn span_dataset(n: usize) -> Vec<wal::SpanFields<'static>> {
     // This is bench-only code — the leak is intentional.
     (0..n)
         .map(|i| {
-            let name: &'static str =
-                Box::leak(format!("op.{}", i % 20).into_boxed_str());
-            let service: &'static str =
-                Box::leak(format!("svc-{}", i % 5).into_boxed_str());
+            let name: &'static str = Box::leak(format!("op.{}", i % 20).into_boxed_str());
+            let service: &'static str = Box::leak(format!("svc-{}", i % 5).into_boxed_str());
             wal::SpanFields {
                 trace_id_hi: (i / 10) as i64,
                 trace_id_lo: (i % 10) as i64,
                 span_id: i as i64 + 1,
-                parent_span_id: if i % 5 == 0 { None } else { Some((i - 1) as i64 + 1) },
+                parent_span_id: if i % 5 == 0 {
+                    None
+                } else {
+                    Some((i - 1) as i64 + 1)
+                },
                 name,
                 service,
                 start_time_ns: 1_715_000_000_000_000_000_i64 + i as i64 * 1_000,
@@ -461,9 +463,7 @@ fn bench_wal() {
                 w.append(s).expect("append");
             }
             w.flush().expect("flush");
-            let wal_bytes = std::fs::metadata(&wal_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let wal_bytes = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
             wal_bytes
         });
 
@@ -524,38 +524,42 @@ fn bench_wal() {
 
             // Query the first trace_id from the segment
             let reader = segment_reader::SegmentReader::open(dir.path()).expect("reader");
-            let trace_id = ((spans[0].trace_id_hi as u128) << 64)
-                | spans[0].trace_id_lo as u64 as u128;
+            let trace_id =
+                ((spans[0].trace_id_hi as u128) << 64) | spans[0].trace_id_lo as u64 as u128;
             reader.find_by_trace(trace_id).map(|v| v.len()).unwrap_or(0)
         });
 
         // ── json-ndjson per-span ──────────────────────────────────────────────
         #[derive(serde::Serialize)]
         struct SpanJson<'a> {
-            trace_id_hi:    i64,
-            trace_id_lo:    i64,
-            span_id:        i64,
+            trace_id_hi: i64,
+            trace_id_lo: i64,
+            span_id: i64,
             parent_span_id: Option<i64>,
-            name:           &'a str,
-            service:        &'a str,
-            start_time_ns:  i64,
-            duration_ns:    i64,
-            status_code:    i64,
+            name: &'a str,
+            service: &'a str,
+            start_time_ns: i64,
+            duration_ns: i64,
+            status_code: i64,
         }
         let t_json = bench(iters, || {
             let mut out = Vec::with_capacity(n * 200);
             for s in &spans {
-                serde_json::to_writer(&mut out, &SpanJson {
-                    trace_id_hi:    s.trace_id_hi,
-                    trace_id_lo:    s.trace_id_lo,
-                    span_id:        s.span_id,
-                    parent_span_id: s.parent_span_id,
-                    name:           s.name,
-                    service:        s.service,
-                    start_time_ns:  s.start_time_ns,
-                    duration_ns:    s.duration_ns,
-                    status_code:    s.status_code,
-                }).unwrap();
+                serde_json::to_writer(
+                    &mut out,
+                    &SpanJson {
+                        trace_id_hi: s.trace_id_hi,
+                        trace_id_lo: s.trace_id_lo,
+                        span_id: s.span_id,
+                        parent_span_id: s.parent_span_id,
+                        name: s.name,
+                        service: s.service,
+                        start_time_ns: s.start_time_ns,
+                        duration_ns: s.duration_ns,
+                        status_code: s.status_code,
+                    },
+                )
+                .unwrap();
                 out.push(b'\n');
             }
             out.len()
@@ -643,10 +647,7 @@ fn bench_wal() {
             fmt_bytes(seg_sz as usize),
             seg_sz as f64 / baseline * 100.0
         );
-        println!(
-            "  │  JSON NDJSON    {:>10}  (baseline)",
-            fmt_bytes(json_sz)
-        );
+        println!("  │  JSON NDJSON    {:>10}  (baseline)", fmt_bytes(json_sz));
         println!(
             "  └─────────────────────────────────────────────────────────────────────────────┘\n"
         );

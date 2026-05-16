@@ -67,16 +67,16 @@ impl SpanSchema {
     pub fn new() -> Self {
         SpanSchema {
             schema: Schema::new(&[
-                "trace_id_hi",   // 0  =i64
-                "trace_id_lo",   // 1  =i64
-                "span_id",       // 2  =i64
-                "parent_span_id",// 3  =i64 / null
-                "name",          // 4  "str
-                "service",       // 5  "str
-                "start_time_ns", // 6  @time
-                "duration_ns",   // 7  =i64
-                "status_code",   // 8  =i64
-                "payload",       // 9  <binary (opaque JSON)
+                "trace_id_hi",    // 0  =i64
+                "trace_id_lo",    // 1  =i64
+                "span_id",        // 2  =i64
+                "parent_span_id", // 3  =i64 / null
+                "name",           // 4  "str
+                "service",        // 5  "str
+                "start_time_ns",  // 6  @time
+                "duration_ns",    // 7  =i64
+                "status_code",    // 8  =i64
+                "payload",        // 9  <binary (opaque JSON)
             ]),
         }
     }
@@ -208,8 +208,7 @@ impl SpanWal {
             .map_err(|e| NxsError::IoError(e.to_string()))?;
 
         // Update in-memory index
-        let trace_id =
-            ((span.trace_id_hi as u128) << 64) | (span.trace_id_lo as u64 as u128);
+        let trace_id = ((span.trace_id_hi as u128) << 64) | (span.trace_id_lo as u64 as u128);
         self.index.push(WalEntry {
             trace_id,
             span_id: span.span_id as u64,
@@ -354,8 +353,7 @@ impl SpanWal {
         let bytes_written = nxb.len() as u64;
         let records = self.record_count;
 
-        std::fs::write(out_path.as_ref(), &nxb)
-            .map_err(|e| NxsError::IoError(e.to_string()))?;
+        std::fs::write(out_path.as_ref(), &nxb).map_err(|e| NxsError::IoError(e.to_string()))?;
 
         Ok(SealReport {
             records,
@@ -389,11 +387,8 @@ fn extract_data_sector(nxb: &[u8]) -> Result<&[u8]> {
         return Err(NxsError::OutOfBounds);
     }
     // Read tail_ptr from preamble bytes 16..24
-    let tail_ptr = u64::from_le_bytes(
-        nxb[16..24]
-            .try_into()
-            .map_err(|_| NxsError::OutOfBounds)?,
-    ) as usize;
+    let tail_ptr =
+        u64::from_le_bytes(nxb[16..24].try_into().map_err(|_| NxsError::OutOfBounds)?) as usize;
     if tail_ptr > nxb.len() {
         return Err(NxsError::OutOfBounds);
     }
@@ -532,7 +527,9 @@ fn extract_trace_span_id(obj: &[u8]) -> Option<(u128, u64)> {
         if val_off + 8 > obj.len() {
             return None;
         }
-        Some(i64::from_le_bytes(obj[val_off..val_off + 8].try_into().ok()?))
+        Some(i64::from_le_bytes(
+            obj[val_off..val_off + 8].try_into().ok()?,
+        ))
     };
 
     let hi = read_i64_at_slot(0)? as u64;
@@ -564,9 +561,7 @@ fn decode_span_object(obj: &[u8]) -> Option<DecodedSpan> {
         .iter()
         .map(|s| s.to_string())
         .collect();
-    let sigils: Vec<u8> = vec![
-        b'=', b'=', b'=', b'=', b'"', b'"', b'@', b'=', b'=', b'<',
-    ];
+    let sigils: Vec<u8> = vec![b'=', b'=', b'=', b'=', b'"', b'"', b'@', b'=', b'=', b'<'];
 
     let fields = decode_record_at(obj, 0, &keys, &sigils).ok()?;
     let get_i64 = |name: &str| -> Option<i64> {
@@ -612,7 +607,9 @@ fn decode_span_object(obj: &[u8]) -> Option<DecodedSpan> {
         })
     };
     let get_null = |name: &str| -> bool {
-        fields.iter().any(|(k, v)| k == name && *v == DecodedValue::Null)
+        fields
+            .iter()
+            .any(|(k, v)| k == name && *v == DecodedValue::Null)
     };
 
     Some(DecodedSpan {

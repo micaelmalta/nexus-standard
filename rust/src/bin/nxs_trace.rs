@@ -120,7 +120,8 @@ fn cmd_write(dir: PathBuf, seal_every: u64) {
 
     // If the file existed, recover the in-memory index first
     if wal_path.exists() && wal.record_count() == 0 {
-        wal.recover().unwrap_or_else(|e| die(&format!("recover: {e}")));
+        wal.recover()
+            .unwrap_or_else(|e| die(&format!("recover: {e}")));
     }
 
     let stdin = io::stdin();
@@ -186,12 +187,8 @@ fn cmd_write(dir: PathBuf, seal_every: u64) {
         }
     }
 
-    wal.flush()
-        .unwrap_or_else(|e| die(&format!("flush: {e}")));
-    eprintln!(
-        "wrote {} spans ({} lines read)",
-        spans_written, lines_read
-    );
+    wal.flush().unwrap_or_else(|e| die(&format!("flush: {e}")));
+    eprintln!("wrote {} spans ({} lines read)", spans_written, lines_read);
 }
 
 fn do_seal(wal: &mut SpanWal, dir: &PathBuf) {
@@ -255,10 +252,7 @@ fn cmd_query(dir: PathBuf, trace_id: Option<String>, from: Option<i64>, to: Opti
         };
         let payload_str = match &span.payload {
             Some(b) => {
-                format!(
-                    "{}",
-                    String::from_utf8_lossy(b)
-                )
+                format!("{}", String::from_utf8_lossy(b))
             }
             None => "null".to_string(),
         };
@@ -329,18 +323,9 @@ fn parse_json_span(v: &Value) -> Option<ParsedSpan> {
         .unwrap_or("")
         .to_string();
 
-    let start_time_ns = v
-        .get("start_time_ns")
-        .and_then(|n| n.as_i64())
-        .unwrap_or(0);
-    let duration_ns = v
-        .get("duration_ns")
-        .and_then(|n| n.as_i64())
-        .unwrap_or(0);
-    let status_code = v
-        .get("status_code")
-        .and_then(|n| n.as_i64())
-        .unwrap_or(0);
+    let start_time_ns = v.get("start_time_ns").and_then(|n| n.as_i64()).unwrap_or(0);
+    let duration_ns = v.get("duration_ns").and_then(|n| n.as_i64()).unwrap_or(0);
+    let status_code = v.get("status_code").and_then(|n| n.as_i64()).unwrap_or(0);
 
     Some(ParsedSpan {
         trace_id_hi: hi as i64,

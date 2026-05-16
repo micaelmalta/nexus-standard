@@ -57,15 +57,13 @@ impl SegmentReader {
         let mut segments = Vec::new();
         let mut wal_path: Option<PathBuf> = None;
 
-        let entries =
-            fs::read_dir(dir).map_err(|e| NxsError::IoError(e.to_string()))?;
+        let entries = fs::read_dir(dir).map_err(|e| NxsError::IoError(e.to_string()))?;
         for entry in entries {
             let entry = entry.map_err(|e| NxsError::IoError(e.to_string()))?;
             let path = entry.path();
             match path.extension().and_then(|e| e.to_str()) {
                 Some("nxb") => {
-                    let data =
-                        fs::read(&path).map_err(|e| NxsError::IoError(e.to_string()))?;
+                    let data = fs::read(&path).map_err(|e| NxsError::IoError(e.to_string()))?;
                     let seg = SealedSegment::load(path, data)?;
                     segments.push(seg);
                 }
@@ -168,11 +166,7 @@ impl SegmentReader {
             .iter()
             .map(|s| s.index.values().map(|v| v.len() as u64).sum::<u64>())
             .sum();
-        let wal_records = self
-            .wal
-            .as_ref()
-            .map(|w| w.wal.record_count())
-            .unwrap_or(0);
+        let wal_records = self.wal.as_ref().map(|w| w.wal.record_count()).unwrap_or(0);
         ReaderStats {
             segment_count,
             sealed_records,
@@ -206,13 +200,9 @@ impl SealedSegment {
 
             // Extract trace_id from the span at abs_off to build the lookup map
             if abs_off as usize + 8 <= data.len() {
-                let fields = decode_record_at(
-                    &data,
-                    abs_off as usize,
-                    &decoded.keys,
-                    &decoded.key_sigils,
-                )
-                .unwrap_or_default();
+                let fields =
+                    decode_record_at(&data, abs_off as usize, &decoded.keys, &decoded.key_sigils)
+                        .unwrap_or_default();
                 if let Some(trace_id) = extract_trace_id(&fields) {
                     index.entry(trace_id).or_default().push(abs_off);
                 }
@@ -229,8 +219,7 @@ impl SealedSegment {
     }
 
     fn decode_span_at(&self, abs_off: u64) -> Result<Span> {
-        let fields =
-            decode_record_at(&self.data, abs_off as usize, &self.keys, &self.sigils)?;
+        let fields = decode_record_at(&self.data, abs_off as usize, &self.keys, &self.sigils)?;
         fields_to_span(&fields).ok_or(NxsError::OutOfBounds)
     }
 }
