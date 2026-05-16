@@ -125,7 +125,8 @@ impl SpanWal {
             .map_err(|e| NxsError::IoError(e.to_string()))?;
         let mut writer = BufWriter::new(file);
 
-        let data_start;
+        // 8-byte fixed header + 4-byte schema_len field + schema bytes
+        let data_start = 8 + 4 + schema_bytes.len() as u64;
         if !file_exists {
             // Write WAL header
             writer
@@ -146,11 +147,6 @@ impl SpanWal {
             writer
                 .flush()
                 .map_err(|e| NxsError::IoError(e.to_string()))?;
-            // 8-byte fixed header + 4-byte schema_len field + schema bytes
-            data_start = 8 + 4 + schema_bytes.len() as u64;
-        } else {
-            // Existing file — data_start must match the header we'd write.
-            data_start = 8 + 4 + schema_bytes.len() as u64;
         }
 
         Ok(SpanWal {

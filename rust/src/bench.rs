@@ -463,8 +463,7 @@ fn bench_wal() {
                 w.append(s).expect("append");
             }
             w.flush().expect("flush");
-            let wal_bytes = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
-            wal_bytes
+            std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0)
         });
 
         // ── recover ───────────────────────────────────────────────────────────
