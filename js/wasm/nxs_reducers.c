@@ -178,3 +178,140 @@ double max_f64(uint32_t base, uint32_t size, uint32_t tail_start,
 }
 
 /* Not needed: JS imports memory, chooses the data base itself. */
+
+/* ── WAL span encoder ────────────────────────────────────────────────────────
+ *
+ * Encodes one NXS span record (the canonical 10-field WAL schema) into a
+ * caller-provided output buffer and returns the number of bytes written.
+ *
+ * Input struct at `fields_ptr` (all little-endian, no padding):
+ *   [  0.. 7]  i64  trace_id_hi      (slot 0)
+ *   [  8..15]  i64  trace_id_lo      (slot 1)
+ *   [ 16..23]  i64  span_id          (slot 2)
+ *   [ 24..31]  i64  parent_span_id   (slot 3)
+ *   [ 32..35]  u32  name_ptr         (slot 4) — abs WASM address of UTF-8 bytes
+ *   [ 36..39]  u32  name_len
+ *   [ 40..43]  u32  service_ptr      (slot 5) — abs WASM address of UTF-8 bytes
+ *   [ 44..47]  u32  service_len
+ *   [ 48..55]  i64  start_time_ns    (slot 6)
+ *   [ 56..63]  i64  duration_ns      (slot 7)
+ *   [ 64..71]  i64  status_code      (slot 8)
+ *   // slot 9 (payload) is always empty — not written
+ *
+ * Output: NXSO record at `out_ptr`.  Returns bytes written.
+ *
+ * Schema: 10 keys → bitmask_bytes = (10+6)/7 = 2.
+ *   Header: magic(4) + length(4) + bitmask(2) + offset_table(10*2=20) = 30 bytes
+ *   Aligned to 8: 32 bytes data-area start.
+ *
+ * Bitmask for slots 0–8 present (9 bits set, slot 9 absent):
+ *   byte 0 (slots 0-6): bits 0..6 all set → 0x7F | 0x80 = 0xFF (continuation)
+ *   byte 1 (slots 7-9): bits 0,1 set (slots 7,8) → 0x03
+ */
+
+static inline void wt_u32(uint8_t *p, uint32_t v) {
+    p[0] = v & 0xFF; p[1] = (v >> 8) & 0xFF;
+    p[2] = (v >> 16) & 0xFF; p[3] = (v >> 24) & 0xFF;
+}
+static inline void wt_i64(uint8_t *p, int64_t v) {
+    uint64_t u = (uint64_t)v;
+    for (int i = 0; i < 8; i++) p[i] = (u >> (i*8)) & 0xFF;
+}
+static inline void wt_u16(uint8_t *p, uint16_t v) {
+    p[0] = v & 0xFF; p[1] = (v >> 8) & 0xFF;
+}
+static inline void wt_memcpy(uint8_t *dst, const uint8_t *src, uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) dst[i] = src[i];
+}
+
+#define MAGIC_OBJ 0x4E58534Fu
+
+__attribute__((export_name("encode_span")))
+uint32_t encode_span(uint32_t out_ptr, uint32_t fields_ptr) {
+    uint8_t *out    = (uint8_t *)(uintptr_t)out_ptr;
+    const uint8_t *f = (const uint8_t *)(uintptr_t)fields_ptr;
+
+    /* Read input fields */
+    int64_t  trace_id_hi   = (int64_t)rd_u64(f +  0);
+    int64_t  trace_id_lo   = (int64_t)rd_u64(f +  8);
+    int64_t  span_id       = (int64_t)rd_u64(f + 16);
+    int64_t  parent_span   = (int64_t)rd_u64(f + 24);
+    uint32_t name_ptr      = rd_u32(f + 32);
+    uint32_t name_len      = rd_u32(f + 36);
+    uint32_t svc_ptr       = rd_u32(f + 40);
+    uint32_t svc_len       = rd_u32(f + 44);
+    int64_t  start_time_ns = (int64_t)rd_u64(f + 48);
+    int64_t  duration_ns   = (int64_t)rd_u64(f + 56);
+    int64_t  status_code   = (int64_t)rd_u64(f + 64);
+
+    const uint8_t *name_bytes = (const uint8_t *)(uintptr_t)name_ptr;
+    const uint8_t *svc_bytes  = (const uint8_t *)(uintptr_t)svc_ptr;
+
+    /* Header offsets:
+     *   0: magic(4), 4: length(4), 8: bitmask(2), 10: offset_table(20)
+     *   30 raw → align to 8 → 32 bytes data start
+     */
+    uint32_t data_start = 32;
+
+    /* Compute string padding (rule of 8: (4+len) must be 8-aligned) */
+    uint32_t name_used = (4 + name_len) % 8;
+    uint32_t name_pad  = name_used ? (8 - name_used) : 0;
+    uint32_t svc_used  = (4 + svc_len) % 8;
+    uint32_t svc_pad   = svc_used  ? (8 - svc_used)  : 0;
+
+    /* Field relative offsets from object start */
+    uint32_t off0  = data_start;                                      /* trace_id_hi   */
+    uint32_t off1  = off0 + 8;                                        /* trace_id_lo   */
+    uint32_t off2  = off1 + 8;                                        /* span_id       */
+    uint32_t off3  = off2 + 8;                                        /* parent_span   */
+    uint32_t off4  = off3 + 8;                                        /* name (str)    */
+    uint32_t off5  = off4 + 4 + name_len + name_pad;                  /* service (str) */
+    uint32_t off6  = off5 + 4 + svc_len  + svc_pad;                   /* start_time_ns */
+    uint32_t off7  = off6 + 8;                                        /* duration_ns   */
+    uint32_t off8  = off7 + 8;                                        /* status_code   */
+    uint32_t total = off8 + 8;
+
+    /* ── Object header ── */
+    wt_u32(out + 0, MAGIC_OBJ);
+    wt_u32(out + 4, total);
+
+    /* Bitmask: slots 0-8 present, slot 9 absent */
+    out[8] = 0xFF; /* slots 0-6: all set, continuation bit */
+    out[9] = 0x03; /* slots 7-8: set, slot 9: not set      */
+
+    /* Offset table (10 entries, u16 each) — slots 0-8 present in order */
+    uint32_t ot = 10;
+    wt_u16(out + ot +  0, (uint16_t)off0);
+    wt_u16(out + ot +  2, (uint16_t)off1);
+    wt_u16(out + ot +  4, (uint16_t)off2);
+    wt_u16(out + ot +  6, (uint16_t)off3);
+    wt_u16(out + ot +  8, (uint16_t)off4);
+    wt_u16(out + ot + 10, (uint16_t)off5);
+    wt_u16(out + ot + 12, (uint16_t)off6);
+    wt_u16(out + ot + 14, (uint16_t)off7);
+    wt_u16(out + ot + 16, (uint16_t)off8);
+    wt_u16(out + ot + 18, 0); /* slot 9 absent → 0 */
+
+    /* 2-byte pad to reach 32-byte data_start (30 bytes header → +2) */
+    out[30] = 0; out[31] = 0;
+
+    /* ── Field data ── */
+    wt_i64(out + off0, trace_id_hi);
+    wt_i64(out + off1, trace_id_lo);
+    wt_i64(out + off2, span_id);
+    wt_i64(out + off3, parent_span);
+
+    wt_u32(out + off4, name_len);
+    wt_memcpy(out + off4 + 4, name_bytes, name_len);
+    for (uint32_t i = 0; i < name_pad; i++) out[off4 + 4 + name_len + i] = 0;
+
+    wt_u32(out + off5, svc_len);
+    wt_memcpy(out + off5 + 4, svc_bytes, svc_len);
+    for (uint32_t i = 0; i < svc_pad; i++) out[off5 + 4 + svc_len + i] = 0;
+
+    wt_i64(out + off6, start_time_ns);
+    wt_i64(out + off7, duration_ns);
+    wt_i64(out + off8, status_code);
+
+    return total;
+}

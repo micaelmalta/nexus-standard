@@ -1,9 +1,11 @@
 /*
- * _nxs.c — CPython C extension for the NXS binary format reader.
+ * _nxs.c — CPython C extension for the NXS binary format (reader + writer).
  *
- * Exposes two types:
+ * Exposes four types:
  *   _nxs.Reader(buffer)       — parses preamble/schema/tail-index
  *   _nxs.Object               — returned by Reader.record(i); decodes fields
+ *   _nxs.Schema(keys)         — precompiled schema for Writer
+ *   _nxs.Writer(schema)       — direct-to-buffer .nxb emitter
  *
  * Design:
  *   - Reader holds the raw bytes pointer; no per-call struct.unpack.
@@ -673,12 +675,292 @@ static PyTypeObject ReaderType = {
     .tp_getset = Reader_getset,
 };
 
+/* ── Writer / Schema C types ─────────────────────────────────────────────── */
+/*
+ * Embed the C writer implementation directly — same source used by c/bench_wal.
+ * We rename the public symbols via #define to avoid clashes with the reader's
+ * own static helpers (put_u32 etc.).  The writer source is self-contained.
+ */
+#define NXS_WRITER_IMPL_ONLY
+#include "../c/nxs_writer.h"
+#include "../c/nxs_writer.c"
+
+/* ── Schema type ─────────────────────────────────────────────────────────── */
+
+typedef struct {
+    PyObject_HEAD
+    char   *key_buf;           /* single heap block: all key strings */
+    char  **keys;              /* pointers into key_buf              */
+    int     key_count;
+} SchemaObject;
+
+static void
+Schema_dealloc(SchemaObject *self)
+{
+    free(self->key_buf);
+    free(self->keys);
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static int
+Schema_init(SchemaObject *self, PyObject *args, PyObject *kwds)
+{
+    (void)kwds;
+    PyObject *list;
+    if (!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
+        return -1;
+
+    Py_ssize_t n = PyList_GET_SIZE(list);
+    if (n <= 0 || n > NXS_WRITER_MAX_KEYS) {
+        PyErr_SetString(PyExc_ValueError, "key list must have 1–256 entries");
+        return -1;
+    }
+
+    /* Compute total byte size for all key strings (null-terminated) */
+    size_t total = 0;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *k = PyList_GET_ITEM(list, i);
+        if (!PyUnicode_Check(k)) { PyErr_SetString(PyExc_TypeError, "keys must be str"); return -1; }
+        total += PyUnicode_GET_LENGTH(k) + 1;
+    }
+
+    self->key_buf   = (char *)malloc(total);
+    self->keys      = (char **)malloc((size_t)n * sizeof(char *));
+    if (!self->key_buf || !self->keys) { free(self->key_buf); free(self->keys); PyErr_NoMemory(); return -1; }
+
+    char *p = self->key_buf;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *k = PyList_GET_ITEM(list, i);
+        const char *s = PyUnicode_AsUTF8(k);
+        if (!s) return -1;
+        size_t slen = strlen(s);
+        memcpy(p, s, slen + 1);
+        self->keys[i] = p;
+        p += slen + 1;
+    }
+    self->key_count = (int)n;
+    return 0;
+}
+
+static PyObject *
+Schema_get_keys(SchemaObject *self, void *closure)
+{
+    (void)closure;
+    PyObject *lst = PyList_New(self->key_count);
+    if (!lst) return NULL;
+    for (int i = 0; i < self->key_count; i++)
+        PyList_SET_ITEM(lst, i, PyUnicode_FromString(self->keys[i]));
+    return lst;
+}
+
+static PyGetSetDef Schema_getset[] = {
+    {"keys", (getter)Schema_get_keys, NULL, "Schema key list.", NULL},
+    {NULL}
+};
+
+static PyTypeObject SchemaType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "_nxs.Schema",
+    .tp_basicsize = sizeof(SchemaObject),
+    .tp_dealloc   = (destructor)Schema_dealloc,
+    .tp_flags     = Py_TPFLAGS_DEFAULT,
+    .tp_doc       = "NXS schema: precompiled key list for Writer.",
+    .tp_init      = (initproc)Schema_init,
+    .tp_new       = PyType_GenericNew,
+    .tp_getset    = Schema_getset,
+};
+
+/* ── Writer type ─────────────────────────────────────────────────────────── */
+
+typedef struct {
+    PyObject_HEAD
+    nxs_writer_t w;
+    int          initialised;
+} WriterObject;
+
+static void
+Writer_dealloc(WriterObject *self)
+{
+    if (self->initialised)
+        nxs_writer_free(&self->w);
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static int
+Writer_init(WriterObject *self, PyObject *args, PyObject *kwds)
+{
+    (void)kwds;
+    SchemaObject *schema;
+    if (!PyArg_ParseTuple(args, "O!", &SchemaType, &schema))
+        return -1;
+
+    if (nxs_writer_init(&self->w,
+                        (const char **)schema->keys,
+                        schema->key_count,
+                        4096) != 0) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    self->initialised = 1;
+    return 0;
+}
+
+static PyObject *
+Writer_begin_object(WriterObject *self, PyObject *Py_UNUSED(ignored))
+{
+    if (nxs_writer_begin_object(&self->w) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_writer_begin_object failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Writer_end_object(WriterObject *self, PyObject *Py_UNUSED(ignored))
+{
+    if (nxs_writer_end_object(&self->w) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_writer_end_object failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Writer_write_i64(WriterObject *self, PyObject *args)
+{
+    int slot; long long v;
+    if (!PyArg_ParseTuple(args, "iL", &slot, &v)) return NULL;
+    if (nxs_write_i64(&self->w, slot, (int64_t)v) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_write_i64 failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Writer_write_f64(WriterObject *self, PyObject *args)
+{
+    int slot; double v;
+    if (!PyArg_ParseTuple(args, "id", &slot, &v)) return NULL;
+    if (nxs_write_f64(&self->w, slot, v) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_write_f64 failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Writer_write_bool(WriterObject *self, PyObject *args)
+{
+    int slot, v;
+    if (!PyArg_ParseTuple(args, "ip", &slot, &v)) return NULL;
+    if (nxs_write_bool(&self->w, slot, v) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_write_bool failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Writer_write_null(WriterObject *self, PyObject *args)
+{
+    int slot;
+    if (!PyArg_ParseTuple(args, "i", &slot)) return NULL;
+    if (nxs_write_null(&self->w, slot) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_write_null failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Writer_write_str(WriterObject *self, PyObject *args)
+{
+    int slot;
+    const char *s;
+    Py_ssize_t slen;
+    if (!PyArg_ParseTuple(args, "is#", &slot, &s, &slen)) return NULL;
+    if (nxs_write_str(&self->w, slot, s, (uint32_t)slen) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_write_str failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Writer_write_bytes(WriterObject *self, PyObject *args)
+{
+    int slot;
+    const uint8_t *data;
+    Py_ssize_t dlen;
+    if (!PyArg_ParseTuple(args, "iy#", &slot, &data, &dlen)) return NULL;
+    if (nxs_write_bytes(&self->w, slot, data, (uint32_t)dlen) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_write_bytes failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Writer_finish(WriterObject *self, PyObject *Py_UNUSED(ignored))
+{
+    if (nxs_writer_finish(&self->w) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "nxs_writer_finish failed");
+        return NULL;
+    }
+    PyObject *result = PyBytes_FromStringAndSize(
+        (const char *)self->w.out, (Py_ssize_t)self->w.out_size);
+    return result;
+}
+
+/* Return raw NXSO bytes of all records (data sector only, no preamble). */
+static PyObject *
+Writer_data_sector(WriterObject *self, PyObject *Py_UNUSED(ignored))
+{
+    return PyBytes_FromStringAndSize(
+        (const char *)self->w.buf, (Py_ssize_t)self->w.buf_pos);
+}
+
+static PyObject *
+Writer_reset(WriterObject *self, PyObject *Py_UNUSED(ignored))
+{
+    nxs_writer_reset(&self->w);
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef Writer_methods[] = {
+    {"begin_object",  (PyCFunction)Writer_begin_object,  METH_NOARGS,  "Open an object."},
+    {"end_object",    (PyCFunction)Writer_end_object,    METH_NOARGS,  "Close the current object."},
+    {"write_i64",     (PyCFunction)Writer_write_i64,     METH_VARARGS, "write_i64(slot, v)"},
+    {"write_f64",     (PyCFunction)Writer_write_f64,     METH_VARARGS, "write_f64(slot, v)"},
+    {"write_bool",    (PyCFunction)Writer_write_bool,    METH_VARARGS, "write_bool(slot, v)"},
+    {"write_null",    (PyCFunction)Writer_write_null,    METH_VARARGS, "write_null(slot)"},
+    {"write_str",     (PyCFunction)Writer_write_str,     METH_VARARGS, "write_str(slot, s)"},
+    {"write_bytes",   (PyCFunction)Writer_write_bytes,   METH_VARARGS, "write_bytes(slot, data)"},
+    {"finish",        (PyCFunction)Writer_finish,        METH_NOARGS,  "Assemble and return complete .nxb bytes."},
+    {"data_sector",   (PyCFunction)Writer_data_sector,   METH_NOARGS,  "Return raw NXSO bytes (no preamble, WAL path)."},
+    {"reset",         (PyCFunction)Writer_reset,         METH_NOARGS,  "Reset writer state, keeping buffer allocation."},
+    {NULL, NULL, 0, NULL}
+};
+
+static PyTypeObject WriterType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "_nxs.Writer",
+    .tp_basicsize = sizeof(WriterObject),
+    .tp_dealloc   = (destructor)Writer_dealloc,
+    .tp_flags     = Py_TPFLAGS_DEFAULT,
+    .tp_doc       = "NXS Writer: direct-to-buffer .nxb emitter (C accelerated).",
+    .tp_init      = (initproc)Writer_init,
+    .tp_new       = PyType_GenericNew,
+    .tp_methods   = Writer_methods,
+};
+
 /* ── Module setup ────────────────────────────────────────────────────────── */
 
 static PyModuleDef nxs_module = {
     PyModuleDef_HEAD_INIT,
     .m_name = "_nxs",
-    .m_doc = "NXS binary format reader (C extension).",
+    .m_doc  = "NXS binary format reader + writer (C extension).",
     .m_size = -1,
 };
 
@@ -687,15 +969,22 @@ PyInit__nxs(void)
 {
     if (PyType_Ready(&ReaderType) < 0) return NULL;
     if (PyType_Ready(&ObjectType) < 0) return NULL;
+    if (PyType_Ready(&SchemaType) < 0) return NULL;
+    if (PyType_Ready(&WriterType) < 0) return NULL;
 
     PyObject *m = PyModule_Create(&nxs_module);
     if (!m) return NULL;
 
-    Py_INCREF(&ReaderType);
-    if (PyModule_AddObject(m, "Reader", (PyObject *)&ReaderType) < 0) {
-        Py_DECREF(&ReaderType);
-        Py_DECREF(m);
-        return NULL;
+#define ADD_TYPE(name, type) \
+    Py_INCREF(&(type)); \
+    if (PyModule_AddObject(m, (name), (PyObject *)&(type)) < 0) { \
+        Py_DECREF(&(type)); Py_DECREF(m); return NULL; \
     }
+
+    ADD_TYPE("Reader", ReaderType)
+    ADD_TYPE("Schema", SchemaType)
+    ADD_TYPE("Writer", WriterType)
+#undef ADD_TYPE
+
     return m;
 }

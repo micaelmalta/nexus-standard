@@ -118,10 +118,18 @@ int nxs_writer_init(nxs_writer_t *w, const char **keys, int key_count,
 
 void nxs_writer_free(nxs_writer_t *w)
 {
-    free(w->buf);          w->buf           = NULL;
+    free(w->buf);            w->buf            = NULL;
     free(w->record_offsets); w->record_offsets = NULL;
-    free(w->out);          w->out           = NULL;
+    free(w->out);            w->out            = NULL;
     w->buf_len = w->buf_pos = w->out_size = 0;
+}
+
+void nxs_writer_reset(nxs_writer_t *w)
+{
+    w->buf_pos      = 0;
+    w->record_count = 0;
+    w->frame_depth  = 0;
+    free(w->out); w->out = NULL; w->out_size = 0;
 }
 
 // ── Object lifetime ───────────────────────────────────────────────────────────

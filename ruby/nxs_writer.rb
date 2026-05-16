@@ -20,7 +20,10 @@
 #   bytes = w.finish   # => binary String (encoding: ASCII-8BIT)
 
 module Nxs
+  MAGIC_FILE           = 0x4E585342  # NXSB
+  MAGIC_OBJ            = 0x4E58534F  # NXSO
   MAGIC_LIST           = 0x4E58534C  # NXSL
+  MAGIC_FOOTER         = 0x2153584E  # NXS!
   VERSION              = 0x0100
   FLAG_SCHEMA_EMBEDDED = 0x0002
 

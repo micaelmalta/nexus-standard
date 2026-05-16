@@ -60,6 +60,23 @@ Build the WASM module from source:
 bash wasm/build.sh
 ```
 
+## WAL ingestion (high-throughput span encoding)
+
+`WasmSpanWriter` encodes a fixed 9-field span directly into WASM memory with no JS heap allocation:
+
+```js
+import { loadWasm, WasmSpanWriter } from "./wasm.js";
+
+const wasm = await loadWasm("./wasm/nxs_reducers.wasm");
+const writer = new WasmSpanWriter(wasm);
+
+writer.encode(traceIdHi, traceIdLo, spanId, parentSpanId,
+              name, service, startTimeNs, durationNs, statusCode);
+// returns a zero-copy Uint8Array view of the encoded NXSO record (~280 ns/span)
+```
+
+See `wal.html` for a live benchmark comparing all five encoder strategies against JSON.
+
 ## Web Workers / SharedArrayBuffer
 
 ```js
@@ -87,6 +104,7 @@ python3 server.py   # required for SharedArrayBuffer (COOP/COEP headers)
 | `ticker.html` | `http://localhost:8000/ticker.html` | 60 FPS in-place byte patch vs full JSON re-parse |
 | `workers.html` | `http://localhost:8000/workers.html` | 4 workers, SharedArrayBuffer, 0 bytes copied |
 | `explorer.html` | `http://localhost:8000/explorer.html` | 10M-line log explorer with virtual scroll |
+| `wal.html` | `http://localhost:8000/wal.html` | WAL ingestion — 5 encoders (generic, fast, sealed, WASM, JSON) — live cross-language chart |
 
 ## Write a file
 
