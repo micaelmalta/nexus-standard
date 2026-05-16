@@ -37,6 +37,10 @@ name = "conformance_runner"
 path = "../conformance/run_rust.rs"
 
 [[bin]]
+name = "nxs-trace"
+path = "src/bin/nxs_trace.rs"
+
+[[bin]]
 name = "nxs-import"
 path = "src/bin/nxs_import.rs"
 

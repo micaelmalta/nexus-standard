@@ -18,4 +18,6 @@ pub mod decoder;
 pub mod error;
 pub mod lexer;
 pub mod parser;
+pub mod segment_reader;
+pub mod wal;
 pub mod writer;
