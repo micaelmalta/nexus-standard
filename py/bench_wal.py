@@ -204,7 +204,7 @@ def bench_nxs_wal_c(n: int, warmup: bool = False) -> float:
 
 if __name__ == "__main__":
     try:
-        import _nxs
+        import _nxs  # noqa: F401
         have_c = True
     except ImportError:
         have_c = False

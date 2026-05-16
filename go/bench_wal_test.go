@@ -60,8 +60,12 @@ func spanDurNs(opIdx, i int) int64 {
 
 func spanStatus(i int) int64 {
 	h := uint32(i) * 2246822519
-	if h < 0x07AE147A { return 1 }
-	if h < 0x0A3D70A4 { return 2 }
+	if h < 0x07AE147A {
+		return 1
+	}
+	if h < 0x0A3D70A4 {
+		return 2
+	}
 	return 0
 }
 
@@ -91,16 +95,21 @@ type spanRecord struct {
 func makeSpan(i int) spanRecord {
 	opIdx := i % len(walOps)
 	return spanRecord{
-		TraceIDHi:    int64(i * 1_000_003),
-		TraceIDLo:    -int64(i*999_983 + 1),
-		SpanID:       int64(i + 1),
-		ParentSpanID: func() int64 { if i%8 == 0 { return 0 }; return int64(i - 1) }(),
-		Name:         walOps[opIdx],
-		Service:      walServices[i%len(walServices)],
-		StartTimeNs:  walStartNs + int64(i)*1_000_000,
-		DurationNs:   spanDurNs(opIdx, i),
-		StatusCode:   spanStatus(i),
-		Payload:      spanPayload(opIdx, i),
+		TraceIDHi: int64(i * 1_000_003),
+		TraceIDLo: -int64(i*999_983 + 1),
+		SpanID:    int64(i + 1),
+		ParentSpanID: func() int64 {
+			if i%8 == 0 {
+				return 0
+			}
+			return int64(i - 1)
+		}(),
+		Name:        walOps[opIdx],
+		Service:     walServices[i%len(walServices)],
+		StartTimeNs: walStartNs + int64(i)*1_000_000,
+		DurationNs:  spanDurNs(opIdx, i),
+		StatusCode:  spanStatus(i),
+		Payload:     spanPayload(opIdx, i),
 	}
 }
 
